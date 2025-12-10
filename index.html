@@ -39,23 +39,26 @@
     }
 
     header {
+      margin-bottom: 24px;
+    }
+
+    .header-top {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 24px;
+      margin-bottom: 12px;
       flex-wrap: wrap;
-      gap: 16px;
+      gap: 12px;
     }
 
     h1 {
-      font-size: 1.75rem;
+      font-size: 1.5rem;
       color: var(--primary);
     }
 
     .header-actions {
       display: flex;
       gap: 8px;
-      flex-wrap: wrap;
     }
 
     nav {
@@ -73,6 +76,9 @@
       cursor: pointer;
       font-weight: 500;
       transition: all 0.2s;
+      flex: 1;
+      min-width: 100px;
+      text-align: center;
     }
 
     .nav-btn:hover {
@@ -96,6 +102,7 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      white-space: nowrap;
     }
 
     .btn-primary {
@@ -332,6 +339,7 @@
       background: var(--bg);
       border-radius: 8px;
       align-items: center;
+      flex-wrap: wrap;
     }
 
     .item-card.todo {
@@ -347,6 +355,7 @@
       height: 24px;
       cursor: pointer;
       accent-color: var(--success);
+      flex-shrink: 0;
     }
 
     .item-image {
@@ -354,6 +363,7 @@
       height: 60px;
       object-fit: cover;
       border-radius: 8px;
+      flex-shrink: 0;
     }
 
     .item-image-placeholder {
@@ -366,10 +376,12 @@
       justify-content: center;
       color: var(--text-light);
       font-size: 1.5rem;
+      flex-shrink: 0;
     }
 
     .item-details {
       flex: 1;
+      min-width: 120px;
     }
 
     .item-name {
@@ -409,8 +421,8 @@
 
     .summary-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px;
       margin-bottom: 24px;
     }
 
@@ -422,13 +434,13 @@
     }
 
     .summary-value {
-      font-size: 1.5rem;
+      font-size: 1.25rem;
       font-weight: 700;
       color: var(--primary);
     }
 
     .summary-label {
-      font-size: 0.875rem;
+      font-size: 0.75rem;
       color: var(--text-light);
     }
 
@@ -493,10 +505,10 @@
     .dropdown-content {
       display: none;
       position: absolute;
-      right: 0;
+      left: 0;
       top: 100%;
       background: var(--card);
-      min-width: 200px;
+      min-width: 180px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
       border-radius: 8px;
       z-index: 100;
@@ -511,6 +523,7 @@
       padding: 12px 16px;
       cursor: pointer;
       transition: background 0.2s;
+      white-space: nowrap;
     }
 
     .dropdown-item:hover {
@@ -522,16 +535,50 @@
     }
 
     @media (max-width: 640px) {
+      .app {
+        padding: 16px;
+      }
+
+      h1 {
+        font-size: 1.25rem;
+      }
+
       .grid {
         grid-template-columns: 1fr;
       }
 
-      .header-actions {
-        width: 100%;
+      .item-card {
+        flex-wrap: wrap;
       }
 
-      .btn {
-        flex: 1;
+      .item-price {
+        width: 100%;
+        text-align: right;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid var(--border);
+      }
+
+      .item-actions {
+        width: 100%;
+        justify-content: flex-end;
+      }
+
+      .summary-value {
+        font-size: 1.1rem;
+      }
+
+      .card {
+        padding: 16px;
+      }
+
+      .card-header {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .card-header .btn {
+        width: 100%;
         justify-content: center;
       }
     }
@@ -540,21 +587,23 @@
 <body>
   <div class="app">
     <header>
-      <h1>🛒 Shopping Tracker</h1>
-      <div class="header-actions">
-        <div class="dropdown">
-          <button class="btn btn-secondary" onclick="toggleDropdown('export-dropdown')">
-            📤 Export
-          </button>
-          <div id="export-dropdown" class="dropdown-content">
-            <div class="dropdown-item" onclick="exportAll()">Export All Data</div>
-            <div class="dropdown-item" onclick="showExportModal()">Export Selected...</div>
+      <div class="header-top">
+        <h1>🛒 Shopping Tracker</h1>
+        <div class="header-actions">
+          <div class="dropdown">
+            <button class="btn btn-secondary" onclick="toggleDropdown('export-dropdown')">
+              📤 Export
+            </button>
+            <div id="export-dropdown" class="dropdown-content">
+              <div class="dropdown-item" onclick="exportAll()">Export All Data</div>
+              <div class="dropdown-item" onclick="showExportModal()">Export Selected...</div>
+            </div>
           </div>
+          <button class="btn btn-secondary" onclick="document.getElementById('import-file').click()">
+            📥 Import
+          </button>
+          <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
         </div>
-        <button class="btn btn-secondary" onclick="document.getElementById('import-file').click()">
-          📥 Import
-        </button>
-        <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
       </div>
     </header>
 
@@ -851,7 +900,6 @@
       const item = list.items.find(i => i.id === itemId);
       
       if (purchased && !item.purchased) {
-        // Show modal to enter price/details when checking off
         showCheckOffModal(item);
       } else {
         item.purchased = purchased;
@@ -925,7 +973,7 @@
                 </label>
               `).join('')}
             </div>
-            <div style="margin-top: 8px;">
+            <div style="margin-top: 8px; display: flex; gap: 8px;">
               <button class="btn btn-secondary btn-sm" onclick="selectAllForAnalytics()">Select All</button>
               <button class="btn btn-secondary btn-sm" onclick="clearAnalyticsSelection()">Clear</button>
             </div>
@@ -959,7 +1007,6 @@
         sum + l.items.filter(i => i.purchased).reduce((s, i) => s + (i.price * i.quantity), 0), 0);
       const totalItems = selectedLists.reduce((sum, l) => sum + l.items.filter(i => i.purchased).length, 0);
       const avgPerList = totalSpent / selectedLists.length;
-      const totalBudget = selectedLists.reduce((sum, l) => sum + (l.budget || 0), 0);
 
       return `
         <div class="summary-grid">
@@ -1016,7 +1063,6 @@
       const budgetData = selectedLists.map(l => l.budget || 0);
       const itemsData = selectedLists.map(l => l.items.filter(i => i.purchased).length);
 
-      // Spending Chart
       const spendingCtx = document.getElementById('spending-chart');
       if (spendingCtx) {
         new Chart(spendingCtx, {
@@ -1059,7 +1105,6 @@
         });
       }
 
-      // Items Chart
       const itemsCtx = document.getElementById('items-chart');
       if (itemsCtx) {
         new Chart(itemsCtx, {
@@ -1612,7 +1657,6 @@
             throw new Error('Invalid file format');
           }
 
-          // Merge groups
           if (data.groups) {
             data.groups.forEach(importedGroup => {
               const existing = state.groups.find(g => g.id === importedGroup.id);
@@ -1624,12 +1668,10 @@
             });
           }
 
-          // Merge lists
           if (data.lists) {
             data.lists.forEach(importedList => {
               const existing = state.lists.find(l => l.id === importedList.id);
               if (existing) {
-                // Update if imported is newer
                 if (new Date(importedList.updatedAt) > new Date(existing.updatedAt)) {
                   Object.assign(existing, importedList);
                 }
@@ -1650,7 +1692,6 @@
       event.target.value = '';
     }
 
-    // Initialize app
     init();
   </script>
 </body>
