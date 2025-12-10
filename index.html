@@ -1118,29 +1118,22 @@
                     // Get standard labels
                     const original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
                     
-                    // Find 'Spent' and override its color style with a Red/Blue pattern
+                    // Find 'Spent' and override its color style
                     const spentLabel = original.find(l => l.text === 'Spent');
                     if (spentLabel) {
-                      // Create a tiny off-screen canvas to generate a Red/Blue split pattern
-                      const pCanvas = document.createElement('canvas');
-                      pCanvas.width = 20;
-                      pCanvas.height = 20;
-                      const pCtx = pCanvas.getContext('2d');
+                      const ctx = chart.ctx;
+                      // Create a gradient that spans 40px (standard legend width)
+                      const gradient = ctx.createLinearGradient(0, 0, 40, 0);
                       
-                      // Fill Blue
-                      pCtx.fillStyle = '#4f46e5';
-                      pCtx.fillRect(0, 0, 20, 20);
+                      // 0% to 50% -> RED
+                      gradient.addColorStop(0, '#ef4444');
+                      gradient.addColorStop(0.5, '#ef4444');
                       
-                      // Draw Red Triangle (Top Left)
-                      pCtx.fillStyle = '#ef4444';
-                      pCtx.beginPath();
-                      pCtx.moveTo(0, 0);
-                      pCtx.lineTo(20, 0);
-                      pCtx.lineTo(0, 20);
-                      pCtx.fill();
-
-                      // Create the pattern and assign it to the label
-                      spentLabel.fillStyle = chart.ctx.createPattern(pCanvas, 'repeat');
+                      // 50% to 100% -> BLUE (Hard stop)
+                      gradient.addColorStop(0.5, '#4f46e5');
+                      gradient.addColorStop(1, '#4f46e5');
+                      
+                      spentLabel.fillStyle = gradient;
                       spentLabel.strokeStyle = 'transparent';
                     }
                     return original;
