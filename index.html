@@ -985,6 +985,11 @@
             <canvas id="spending-chart"></canvas>
           </div>
 
+           <!-- ADDED: New Chart Container for Cost Trend -->
+          <div class="chart-container">
+            <canvas id="cost-trend-chart"></canvas>
+          </div>
+
           <div class="chart-container">
             <canvas id="items-chart"></canvas>
           </div>
@@ -1574,7 +1579,9 @@
         version: 1,
         exportedAt: new Date().toISOString(),
         lists: state.lists,
-        groups: state.groups
+        groups: state.groups,
+        // ADDED: Readable report for accounting
+        accounting_report: generateAccountingReport(state.lists) 
       };
       downloadJSON(data, 'shopping-tracker-all.json');
     }
@@ -1614,15 +1621,38 @@
       `);
     }
 
+    // NEW HELPER: Generates a flat, human-readable array of spending
+    function generateAccountingReport(lists) {
+      return lists.map(list => {
+        // Calculate totals
+        const purchasedItems = list.items.filter(i => i.purchased);
+        const totalSpent = purchasedItems.reduce((sum, i) => sum + i.price, 0);
+        
+        // Return a clean, flat object
+        return {
+          date: formatDate(list.createdAt),
+          list_name: list.name,
+          total_spent: totalSpent,
+          budget: list.budget || 0,
+          status: totalSpent > list.budget && list.budget > 0 ? "OVER BUDGET" : "OK",
+          items_breakdown: purchasedItems.map(i => `${i.name} ($${i.price.toFixed(2)})`).join("; ")
+        };
+      });
+    }
+
     function exportSelected() {
-      const selectedLists = [...document.querySelectorAll('.export-list-cb:checked')].map(cb => cb.value);
-      const selectedGroups = [...document.querySelectorAll('.export-group-cb:checked')].map(cb => cb.value);
+      const selectedListIds = [...document.querySelectorAll('.export-list-cb:checked')].map(cb => cb.value);
+      const selectedGroupIds = [...document.querySelectorAll('.export-group-cb:checked')].map(cb => cb.value);
+
+      const filteredLists = state.lists.filter(l => selectedListIds.includes(l.id));
 
       const data = {
         version: 1,
         exportedAt: new Date().toISOString(),
-        lists: state.lists.filter(l => selectedLists.includes(l.id)),
-        groups: state.groups.filter(g => selectedGroups.includes(g.id))
+        lists: filteredLists,
+        groups: state.groups.filter(g => selectedGroupIds.includes(g.id)),
+        // ADDED: Readable report for accounting based on selection
+        accounting_report: generateAccountingReport(filteredLists)
       };
 
       if (data.lists.length === 0 && data.groups.length === 0) {
@@ -1693,6 +1723,4 @@
     }
 
     init();
-  </script>
-</body>
-</html>
+</script>
