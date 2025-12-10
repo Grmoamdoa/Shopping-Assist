@@ -900,6 +900,7 @@
       const item = list.items.find(i => i.id === itemId);
       
       if (purchased && !item.purchased) {
+        // Show modal to enter price/details when checking off
         showCheckOffModal(item);
       } else {
         item.purchased = purchased;
@@ -973,7 +974,7 @@
                 </label>
               `).join('')}
             </div>
-            <div style="margin-top: 8px; display: flex; gap: 8px;">
+            <div style="margin-top: 8px;">
               <button class="btn btn-secondary btn-sm" onclick="selectAllForAnalytics()">Select All</button>
               <button class="btn btn-secondary btn-sm" onclick="clearAnalyticsSelection()">Clear</button>
             </div>
@@ -983,6 +984,11 @@
           
           <div class="chart-container">
             <canvas id="spending-chart"></canvas>
+          </div>
+
+           <!-- ADDED: New Chart Container for Cost Trend -->
+          <div class="chart-container">
+            <canvas id="cost-trend-chart"></canvas>
           </div>
 
           <div class="chart-container">
@@ -1007,6 +1013,7 @@
         sum + l.items.filter(i => i.purchased).reduce((s, i) => s + i.price, 0), 0);
       const totalItems = selectedLists.reduce((sum, l) => sum + l.items.filter(i => i.purchased).length, 0);
       const avgPerList = totalSpent / selectedLists.length;
+      const totalBudget = selectedLists.reduce((sum, l) => sum + (l.budget || 0), 0);
 
       return `
         <div class="summary-grid">
@@ -1059,10 +1066,11 @@
 
       const labels = selectedLists.map(l => formatDate(l.createdAt));
       const spendingData = selectedLists.map(l => 
-        l.items.filter(i => i.purchased).reduce((s, i) => s + i.price, 0));
+         l.items.filter(i => i.purchased).reduce((s, i) => s + i.price, 0));
       const budgetData = selectedLists.map(l => l.budget || 0);
       const itemsData = selectedLists.map(l => l.items.filter(i => i.purchased).length);
 
+      // Spending Chart
       const spendingCtx = document.getElementById('spending-chart');
       if (spendingCtx) {
         new Chart(spendingCtx, {
@@ -1105,6 +1113,45 @@
         });
       }
 
+      // ADDED: Cost Trend Chart
+      const costTrendCtx = document.getElementById('cost-trend-chart');
+      if (costTrendCtx) {
+        new Chart(costTrendCtx, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Total Cost per Trip',
+              data: spendingData,
+              borderColor: '#f59e0b', // Warning color (Orange)
+              backgroundColor: 'rgba(245, 158, 11, 0.1)',
+              fill: true,
+              tension: 0.3,
+              pointBackgroundColor: '#f59e0b'
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: {
+                display: true,
+                text: 'Total Cost / List Over Time'
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  callback: value => '$' + value
+                }
+              }
+            }
+          }
+        });
+      }
+
+      // Items Chart
       const itemsCtx = document.getElementById('items-chart');
       if (itemsCtx) {
         new Chart(itemsCtx, {
@@ -1574,7 +1621,9 @@
         version: 1,
         exportedAt: new Date().toISOString(),
         lists: state.lists,
-        groups: state.groups
+        groups: state.groups,
+        // ADDED: Readable report for accounting
+        accounting_report: generateAccountingReport(state.lists) 
       };
       downloadJSON(data, 'shopping-tracker-all.json');
     }
@@ -1614,15 +1663,38 @@
       `);
     }
 
+    // NEW HELPER: Generates a flat, human-readable array of spending
+    function generateAccountingReport(lists) {
+      return lists.map(list => {
+        // Calculate totals
+        const purchasedItems = list.items.filter(i => i.purchased);
+        const totalSpent = purchasedItems.reduce((sum, i) => sum + i.price, 0);
+        
+        // Return a clean, flat object
+        return {
+          date: formatDate(list.createdAt),
+          list_name: list.name,
+          total_spent: totalSpent,
+          budget: list.budget || 0,
+          status: totalSpent > list.budget && list.budget > 0 ? "OVER BUDGET" : "OK",
+          items_breakdown: purchasedItems.map(i => `${i.name} ($${i.price.toFixed(2)})`).join("; ")
+        };
+      });
+    }
+
     function exportSelected() {
-      const selectedLists = [...document.querySelectorAll('.export-list-cb:checked')].map(cb => cb.value);
-      const selectedGroups = [...document.querySelectorAll('.export-group-cb:checked')].map(cb => cb.value);
+      const selectedListIds = [...document.querySelectorAll('.export-list-cb:checked')].map(cb => cb.value);
+      const selectedGroupIds = [...document.querySelectorAll('.export-group-cb:checked')].map(cb => cb.value);
+
+      const filteredLists = state.lists.filter(l => selectedListIds.includes(l.id));
 
       const data = {
         version: 1,
         exportedAt: new Date().toISOString(),
-        lists: state.lists.filter(l => selectedLists.includes(l.id)),
-        groups: state.groups.filter(g => selectedGroups.includes(g.id))
+        lists: filteredLists,
+        groups: state.groups.filter(g => selectedGroupIds.includes(g.id)),
+        // ADDED: Readable report for accounting based on selection
+        accounting_report: generateAccountingReport(filteredLists)
       };
 
       if (data.lists.length === 0 && data.groups.length === 0) {
@@ -1657,6 +1729,7 @@
             throw new Error('Invalid file format');
           }
 
+          // Merge groups
           if (data.groups) {
             data.groups.forEach(importedGroup => {
               const existing = state.groups.find(g => g.id === importedGroup.id);
@@ -1668,10 +1741,12 @@
             });
           }
 
+          // Merge lists
           if (data.lists) {
             data.lists.forEach(importedList => {
               const existing = state.lists.find(l => l.id === importedList.id);
               if (existing) {
+                // Update if imported is newer
                 if (new Date(importedList.updatedAt) > new Date(existing.updatedAt)) {
                   Object.assign(existing, importedList);
                 }
@@ -1692,7 +1767,6 @@
       event.target.value = '';
     }
 
+    // Initialize app
     init();
-  </script>
-</body>
-</html>
+</script>
