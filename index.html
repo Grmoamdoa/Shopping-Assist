@@ -714,7 +714,7 @@
     }
 
     function renderListCard(list) {
-      const totalSpent = list.items.filter(i => i.purchased).reduce((sum, i) => sum + (i.price * i.quantity), 0);
+      const totalSpent = list.items.filter(i => i.purchased).reduce((sum, i) => sum + i.price, 0);
       const totalItems = list.items.length;
       const purchasedItems = list.items.filter(i => i.purchased).length;
       const budgetPercent = list.budget ? (totalSpent / list.budget) * 100 : 0;
@@ -754,7 +754,7 @@
     // List Detail View
     function renderListDetail() {
       const list = state.currentList;
-      const totalSpent = list.items.filter(i => i.purchased).reduce((sum, i) => sum + (i.price * i.quantity), 0);
+      const totalSpent = list.items.filter(i => i.purchased).reduce((sum, i) => sum + i.price, 0);
       const todoItems = list.items.filter(i => !i.purchased);
       const purchasedItems = list.items.filter(i => i.purchased);
 
@@ -837,7 +837,7 @@
               ${item.notes ? `• ${item.notes}` : ''}
             </div>
           </div>
-          <div class="item-price">${formatCurrency(item.price * item.quantity)}</div>
+          <div class="item-price">${formatCurrency(item.price)}</div>
           <div class="item-actions">
             <button class="btn btn-secondary btn-sm" onclick="showEditItemModal('${item.id}')">✏️</button>
             <button class="btn btn-danger btn-sm" onclick="deleteItem('${listId}', '${item.id}')">🗑️</button>
@@ -882,7 +882,7 @@
               ${state.groups.map(group => {
                 const listsInGroup = state.lists.filter(l => l.groupId === group.id);
                 const totalSpent = listsInGroup.reduce((sum, l) => 
-                  sum + l.items.filter(i => i.purchased).reduce((s, i) => s + (i.price * i.quantity), 0), 0);
+                  sum + l.items.filter(i => i.purchased).reduce((s, i) => s + i.price, 0), 0);
                 return `
                   <div class="list-card">
                     <div class="list-card-header">
@@ -956,7 +956,7 @@
       }
 
       const totalSpent = selectedLists.reduce((sum, l) => 
-        sum + l.items.filter(i => i.purchased).reduce((s, i) => s + (i.price * i.quantity), 0), 0);
+        sum + l.items.filter(i => i.purchased).reduce((s, i) => s + i.price, 0), 0);
       const totalItems = selectedLists.reduce((sum, l) => sum + l.items.filter(i => i.purchased).length, 0);
       const avgPerList = totalSpent / selectedLists.length;
       const totalBudget = selectedLists.reduce((sum, l) => sum + (l.budget || 0), 0);
@@ -1012,7 +1012,7 @@
 
       const labels = selectedLists.map(l => formatDate(l.createdAt));
       const spendingData = selectedLists.map(l => 
-        l.items.filter(i => i.purchased).reduce((s, i) => s + (i.price * i.quantity), 0));
+         l.items.filter(i => i.purchased).reduce((s, i) => s + i.price, 0));
       const budgetData = selectedLists.map(l => l.budget || 0);
       const itemsData = selectedLists.map(l => l.items.filter(i => i.purchased).length);
 
