@@ -900,7 +900,6 @@
       const item = list.items.find(i => i.id === itemId);
       
       if (purchased && !item.purchased) {
-        // Show modal to enter price/details when checking off
         showCheckOffModal(item);
       } else {
         item.purchased = purchased;
@@ -974,7 +973,7 @@
                 </label>
               `).join('')}
             </div>
-            <div style="margin-top: 8px;">
+            <div style="margin-top: 8px; display: flex; gap: 8px;">
               <button class="btn btn-secondary btn-sm" onclick="selectAllForAnalytics()">Select All</button>
               <button class="btn btn-secondary btn-sm" onclick="clearAnalyticsSelection()">Clear</button>
             </div>
@@ -1013,7 +1012,6 @@
         sum + l.items.filter(i => i.purchased).reduce((s, i) => s + i.price, 0), 0);
       const totalItems = selectedLists.reduce((sum, l) => sum + l.items.filter(i => i.purchased).length, 0);
       const avgPerList = totalSpent / selectedLists.length;
-      const totalBudget = selectedLists.reduce((sum, l) => sum + (l.budget || 0), 0);
 
       return `
         <div class="summary-grid">
@@ -1066,11 +1064,10 @@
 
       const labels = selectedLists.map(l => formatDate(l.createdAt));
       const spendingData = selectedLists.map(l => 
-         l.items.filter(i => i.purchased).reduce((s, i) => s + i.price, 0));
+        l.items.filter(i => i.purchased).reduce((s, i) => s + i.price, 0));
       const budgetData = selectedLists.map(l => l.budget || 0);
       const itemsData = selectedLists.map(l => l.items.filter(i => i.purchased).length);
 
-      // Spending Chart
       const spendingCtx = document.getElementById('spending-chart');
       if (spendingCtx) {
         new Chart(spendingCtx, {
@@ -1113,45 +1110,6 @@
         });
       }
 
-      // ADDED: Cost Trend Chart
-      const costTrendCtx = document.getElementById('cost-trend-chart');
-      if (costTrendCtx) {
-        new Chart(costTrendCtx, {
-          type: 'line',
-          data: {
-            labels,
-            datasets: [{
-              label: 'Total Cost per Trip',
-              data: spendingData,
-              borderColor: '#f59e0b', // Warning color (Orange)
-              backgroundColor: 'rgba(245, 158, 11, 0.1)',
-              fill: true,
-              tension: 0.3,
-              pointBackgroundColor: '#f59e0b'
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              title: {
-                display: true,
-                text: 'Total Cost / List Over Time'
-              }
-            },
-            scales: {
-              y: {
-                beginAtZero: true,
-                ticks: {
-                  callback: value => '$' + value
-                }
-              }
-            }
-          }
-        });
-      }
-
-      // Items Chart
       const itemsCtx = document.getElementById('items-chart');
       if (itemsCtx) {
         new Chart(itemsCtx, {
@@ -1729,7 +1687,6 @@
             throw new Error('Invalid file format');
           }
 
-          // Merge groups
           if (data.groups) {
             data.groups.forEach(importedGroup => {
               const existing = state.groups.find(g => g.id === importedGroup.id);
@@ -1741,12 +1698,10 @@
             });
           }
 
-          // Merge lists
           if (data.lists) {
             data.lists.forEach(importedList => {
               const existing = state.lists.find(l => l.id === importedList.id);
               if (existing) {
-                // Update if imported is newer
                 if (new Date(importedList.updatedAt) > new Date(existing.updatedAt)) {
                   Object.assign(existing, importedList);
                 }
@@ -1767,6 +1722,5 @@
       event.target.value = '';
     }
 
-    // Initialize app
     init();
 </script>
