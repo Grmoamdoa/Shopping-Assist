@@ -1079,6 +1079,22 @@
         return '#4f46e5'; // Primary Blue
       });
 
+      // PREPARE THE SPLIT ICON IMAGE
+      // We generate a tiny image that is permanently 50% Red / 50% Blue
+      const splitCanvas = document.createElement('canvas');
+      splitCanvas.width = 40;
+      splitCanvas.height = 12;
+      const sCtx = splitCanvas.getContext('2d');
+      // Left Half Red
+      sCtx.fillStyle = '#ef4444';
+      sCtx.fillRect(0, 0, 20, 12);
+      // Right Half Blue
+      sCtx.fillStyle = '#4f46e5';
+      sCtx.fillRect(20, 0, 20, 12);
+      
+      const splitImage = new Image();
+      splitImage.src = splitCanvas.toDataURL();
+
       // Spending Chart
       const spendingCtx = document.getElementById('spending-chart');
       if (spendingCtx) {
@@ -1093,7 +1109,7 @@
               {
                 label: 'Spent',
                 data: spendingData,
-                backgroundColor: barColors, // Dynamic array (Red/Blue)
+                backgroundColor: barColors,
                 borderRadius: 4
               },
               {
@@ -1114,29 +1130,27 @@
               },
               legend: {
                 labels: {
+                  // Switch to pointStyle to support custom Images
+                  usePointStyle: true,
+                  // Force the "Point" to be wide like a box
+                  pointStyleWidth: 40,
+                  
                   generateLabels: function(chart) {
-                    // Get standard labels
                     const original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
                     
-                    // Find 'Spent' and override its color style
-                    const spentLabel = original.find(l => l.text === 'Spent');
-                    if (spentLabel) {
-                      const ctx = chart.ctx;
-                      // Create a gradient that spans 40px (standard legend width)
-                      const gradient = ctx.createLinearGradient(0, 0, 40, 0);
-                      
-                      // 0% to 50% -> RED
-                      gradient.addColorStop(0, '#ef4444');
-                      gradient.addColorStop(0.5, '#ef4444');
-                      
-                      // 50% to 100% -> BLUE (Hard stop)
-                      gradient.addColorStop(0.5, '#4f46e5');
-                      gradient.addColorStop(1, '#4f46e5');
-                      
-                      spentLabel.fillStyle = gradient;
-                      spentLabel.strokeStyle = 'transparent';
-                    }
-                    return original;
+                    return original.map(label => {
+                      if (label.text === 'Spent') {
+                        // Override the style to be our custom split image
+                        label.pointStyle = splitImage;
+                        // Clear fill/stroke so they don't interfere
+                        label.fillStyle = 'transparent';
+                        label.strokeStyle = 'transparent';
+                      } else {
+                        // Ensure other items (Budget) stay rectangular
+                        label.pointStyle = 'rectRounded';
+                      }
+                      return label;
+                    });
                   }
                 }
               },
