@@ -1093,10 +1093,8 @@
               {
                 label: 'Spent',
                 data: spendingData,
-                backgroundColor: barColors,
-                borderRadius: 4,
-                // Force a neutral color for the default legend to avoid confusion before the override kicks in
-                backgroundColor: '#4f46e5' 
+                backgroundColor: barColors, // Dynamic array (Red/Blue)
+                borderRadius: 4
               },
               {
                 label: 'Budget',
@@ -1116,27 +1114,34 @@
               },
               legend: {
                 labels: {
-                  // Custom function to draw the Split Color box
                   generateLabels: function(chart) {
-                    // Get default labels
+                    // Get standard labels
                     const original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
                     
-                    // Find the "Spent" label
+                    // Find 'Spent' and override its color style with a Red/Blue pattern
                     const spentLabel = original.find(l => l.text === 'Spent');
                     if (spentLabel) {
-                      // Create a diagonal gradient: Top-Left (Red) -> Bottom-Right (Blue)
-                      const ctx = chart.ctx;
-                      // 40px is the standard legend box width
-                      const gradient = ctx.createLinearGradient(0, 0, 40, 10);
+                      // Create a tiny off-screen canvas to generate a Red/Blue split pattern
+                      const pCanvas = document.createElement('canvas');
+                      pCanvas.width = 20;
+                      pCanvas.height = 20;
+                      const pCtx = pCanvas.getContext('2d');
                       
-                      // Sharp split in the middle
-                      gradient.addColorStop(0, '#ef4444');    // Red start
-                      gradient.addColorStop(0.5, '#ef4444');  // Red stop
-                      gradient.addColorStop(0.5, '#4f46e5'); // Blue start
-                      gradient.addColorStop(1, '#4f46e5');    // Blue end
+                      // Fill Blue
+                      pCtx.fillStyle = '#4f46e5';
+                      pCtx.fillRect(0, 0, 20, 20);
                       
-                      spentLabel.fillStyle = gradient;
-                      spentLabel.strokeStyle = 'transparent'; // Remove border for cleaner look
+                      // Draw Red Triangle (Top Left)
+                      pCtx.fillStyle = '#ef4444';
+                      pCtx.beginPath();
+                      pCtx.moveTo(0, 0);
+                      pCtx.lineTo(20, 0);
+                      pCtx.lineTo(0, 20);
+                      pCtx.fill();
+
+                      // Create the pattern and assign it to the label
+                      spentLabel.fillStyle = chart.ctx.createPattern(pCanvas, 'repeat');
+                      spentLabel.strokeStyle = 'transparent';
                     }
                     return original;
                   }
