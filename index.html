@@ -1070,9 +1070,21 @@
       const budgetData = selectedLists.map(l => l.budget || 0);
       const itemsData = selectedLists.map(l => l.items.filter(i => i.purchased).length);
 
+      // Determine bar colors based on budget status
+      const barColors = spendingData.map((spent, index) => {
+        const budget = budgetData[index];
+        if (budget > 0 && spent > budget) {
+          return '#ef4444'; // Red for over budget
+        }
+        return '#4f46e5'; // Primary Blue
+      });
+
       // Spending Chart
       const spendingCtx = document.getElementById('spending-chart');
       if (spendingCtx) {
+        const existingChart = Chart.getChart(spendingCtx);
+        if (existingChart) existingChart.destroy();
+
         new Chart(spendingCtx, {
           type: 'bar',
           data: {
@@ -1081,7 +1093,7 @@
               {
                 label: 'Spent',
                 data: spendingData,
-                backgroundColor: '#4f46e5',
+                backgroundColor: barColors,
                 borderRadius: 4
               },
               {
@@ -1113,9 +1125,12 @@
         });
       }
 
-      // ADDED: Cost Trend Chart
+      // Cost Trend Chart
       const costTrendCtx = document.getElementById('cost-trend-chart');
       if (costTrendCtx) {
+        const existingChart = Chart.getChart(costTrendCtx);
+        if (existingChart) existingChart.destroy();
+
         new Chart(costTrendCtx, {
           type: 'line',
           data: {
@@ -1123,7 +1138,7 @@
             datasets: [{
               label: 'Total Cost per Trip',
               data: spendingData,
-              borderColor: '#f59e0b', // Warning color (Orange)
+              borderColor: '#f59e0b',
               backgroundColor: 'rgba(245, 158, 11, 0.1)',
               fill: true,
               tension: 0.3,
@@ -1154,6 +1169,9 @@
       // Items Chart
       const itemsCtx = document.getElementById('items-chart');
       if (itemsCtx) {
+        const existingChart = Chart.getChart(itemsCtx);
+        if (existingChart) existingChart.destroy();
+
         new Chart(itemsCtx, {
           type: 'line',
           data: {
