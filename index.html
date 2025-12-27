@@ -473,28 +473,72 @@
 
     /* CSS for Bulk Management Features */
     .manage-section {
-      margin-bottom: 20px;
+      margin-bottom: 24px;
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .manage-section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
     }
     .manage-section-title {
       font-size: 0.9rem;
-      font-weight: 600;
+      font-weight: 700;
       color: var(--text-light);
-      margin-bottom: 8px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
     .manage-list-item {
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-start; /* Changed from space-between */
       align-items: center;
       padding: 10px;
-      background: var(--bg);
+      background: var(--card); /* Changed to card color for contrast against section bg */
+      border: 1px solid var(--border);
       border-radius: 6px;
       margin-bottom: 8px;
       transition: background 0.2s;
     }
     .manage-list-item:hover {
-      background: #eef2ff;
+      border-color: var(--primary);
+    }
+        /* New Checkbox Style */
+    .manage-checkbox {
+        width: 20px;
+        height: 20px;
+        margin-right: 12px;
+        cursor: pointer;
+        accent-color: var(--primary);
+    }
+
+    /* Bulk Actions Toolbar */
+    .bulk-actions-bar {
+        margin-top: 8px;
+        display: flex;
+        gap: 8px;
+    }
+    
+    .btn-block {
+        display: block;
+        width: 100%;
+        text-align: center;
+    }
+    
+    .text-sm {
+        font-size: 0.8rem;
+    }
+    
+    .select-toggle {
+        font-size: 0.8rem;
+        color: var(--primary);
+        cursor: pointer;
+        text-decoration: underline;
+        border: none;
+        background: none;
+        padding: 0;
     }
     .manage-btn-icon {
       width: 28px;
@@ -1181,6 +1225,31 @@
       const budgetData = selectedLists.map(l => l.budget || 0);
       const itemsData = selectedLists.map(l => l.items.filter(i => i.purchased).length);
 
+      // --- Chart Click Handler Logic ---
+      const handleChartClick = (e, elements, chart) => {
+          let index = -1;
+
+          // 1. Try standard element detection
+          if (elements && elements.length > 0) {
+              index = elements[0].index;
+          } else {
+              // 2. Fallback: Calculate nearest X index based on click position
+              const canvasPosition = Chart.helpers.getRelativePosition(e, chart);
+              const dataX = chart.scales.x.getValueForPixel(canvasPosition.x);
+              
+              // Ensure we are within bounds
+              if (dataX >= 0 && dataX < selectedLists.length) {
+                  index = dataX;
+              }
+          }
+
+          // 3. Trigger Popup if valid index found
+          if (index !== -1) {
+              const list = selectedLists[index];
+              if(list) showListSummaryModal(list);
+          }
+      };
+
       // Determine bar colors based on budget status
       const barColors = spendingData.map((spent, index) => {
         const budget = budgetData[index];
@@ -1202,7 +1271,7 @@
       const splitImage = new Image();
       splitImage.src = splitCanvas.toDataURL();
 
-      // Spending Chart (Standard Bar, No Popup Interaction)
+      // Spending Chart (Standard Bar)
       const spendingCtx = document.getElementById('spending-chart');
       if (spendingCtx) {
         const existingChart = Chart.getChart(spendingCtx);
@@ -1231,10 +1300,7 @@
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-              title: {
-                display: true,
-                text: 'Spending vs Budget Over Time'
-              },
+              title: { display: true, text: 'Spending vs Budget Over Time' },
               legend: {
                 labels: {
                   usePointStyle: true,
@@ -1270,18 +1336,13 @@
               }
             },
             scales: {
-              y: {
-                beginAtZero: true,
-                ticks: {
-                  callback: value => '$' + value
-                }
-              }
+              y: { beginAtZero: true, ticks: { callback: value => '$' + value } }
             }
           }
         });
       }
 
-      // Cost Trend Chart (Line Chart with Vertical Hover Interaction)
+      // Cost Trend Chart (Line Chart with Improved Click)
       const costTrendCtx = document.getElementById('cost-trend-chart');
       if (costTrendCtx) {
         const existingChart = Chart.getChart(costTrendCtx);
@@ -1300,43 +1361,21 @@
               tension: 0.3,
               pointBackgroundColor: '#f59e0b',
               pointRadius: 6,
-              pointHitRadius: 20
+              pointHitRadius: 50 // Increased Hit Radius
             }]
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
-            interaction: {
-              // Allows clicking anywhere in the vertical slice (x-axis)
-              mode: 'index',
-              intersect: false
-            },
-            onClick: (e, elements) => {
-              if (elements && elements.length > 0) {
-                const index = elements[0].index;
-                const list = selectedLists[index];
-                if(list) showListSummaryModal(list);
-              }
-            },
-            plugins: {
-              title: {
-                display: true,
-                text: 'Total Cost / List Over Time'
-              }
-            },
-            scales: {
-              y: {
-                beginAtZero: true,
-                ticks: {
-                  callback: value => '$' + value
-                }
-              }
-            }
+            interaction: { mode: 'index', intersect: false },
+            onClick: handleChartClick, // Use new handler
+            plugins: { title: { display: true, text: 'Total Cost / List Over Time' } },
+            scales: { y: { beginAtZero: true, ticks: { callback: value => '$' + value } } }
           }
         });
       }
 
-      // Items Chart (Line Chart with Vertical Hover Interaction)
+      // Items Chart (Line Chart with Improved Click)
       const itemsCtx = document.getElementById('items-chart');
       if (itemsCtx) {
         const existingChart = Chart.getChart(itemsCtx);
@@ -1354,35 +1393,16 @@
               fill: true,
               tension: 0.3,
               pointRadius: 6,
-              pointHitRadius: 20
+              pointHitRadius: 50 // Increased Hit Radius
             }]
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
-            interaction: {
-              // Allows clicking anywhere in the vertical slice (x-axis)
-              mode: 'index',
-              intersect: false
-            },
-            onClick: (e, elements) => {
-              if (elements && elements.length > 0) {
-                const index = elements[0].index;
-                const list = selectedLists[index];
-                if(list) showListSummaryModal(list);
-              }
-            },
-            plugins: {
-              title: {
-                display: true,
-                text: 'Items Purchased Over Time'
-              }
-            },
-            scales: {
-              y: {
-                beginAtZero: true
-              }
-            }
+            interaction: { mode: 'index', intersect: false },
+            onClick: handleChartClick, // Use new handler
+            plugins: { title: { display: true, text: 'Items Purchased Over Time' } },
+            scales: { y: { beginAtZero: true } }
           }
         });
       }
@@ -1417,13 +1437,13 @@
       `);
     }
 
-    // Feature 2: Merged Edit & Bulk List Management Modal
+  // Feature 2: Merged Edit & Bulk List Management Modal
     function showEditGroupModal(groupId, preservedName = null) {
       const group = state.groups.find(g => g.id === groupId);
       const inGroup = state.lists.filter(l => l.groupId === groupId);
       const available = state.lists.filter(l => !l.groupId);
       
-      // Use preservedName if we are re-rendering after a list move, otherwise current name
+      // Use preservedName if we are re-rendering after a list move
       const nameValue = preservedName !== null ? preservedName : group.name;
 
       showModal(`
@@ -1439,65 +1459,118 @@
           
           <hr style="border: 0; border-top: 1px solid var(--border); margin: 20px 0;">
           
-          <div style="max-height: 40vh; overflow-y: auto;">
+          <div style="max-height: 50vh; overflow-y: auto;">
+            
             <!-- In Group Section -->
             <div class="manage-section">
-              <div class="manage-section-title">In this Group (${inGroup.length})</div>
+              <div class="manage-section-header">
+                <div class="manage-section-title">In this Group (${inGroup.length})</div>
+                <button type="button" class="select-toggle" onclick="toggleSelectAll('in-group-cb')">Select All</button>
+              </div>
+              
               ${inGroup.length === 0 
-                ? `<div style="padding: 10px; color: var(--text-light); font-style: italic;">No lists in this group</div>` 
+                ? `<div style="color: var(--text-light); font-style: italic; font-size: 0.9rem;">No lists in this group</div>` 
                 : inGroup.map(list => `
-                  <div class="manage-list-item">
+                  <label class="manage-list-item">
+                    <input type="checkbox" class="manage-checkbox in-group-cb" value="${list.id}">
                     <div>
                       <div style="font-weight: 500;">${list.name}</div>
                       <div style="font-size: 0.75rem; color: var(--text-light);">${formatDate(list.createdAt)}</div>
                     </div>
-                    <!-- Pass 'remove' action -->
-                    <button type="button" class="manage-btn-icon remove-btn" onclick="updateListGroup('${list.id}', null, '${groupId}')" title="Remove from Group">✕</button>
-                  </div>
+                  </label>
                 `).join('')}
+
+              ${inGroup.length > 0 ? `
+                <div class="bulk-actions-bar">
+                    <button type="button" class="btn btn-danger btn-sm btn-block" onclick="bulkRemoveLists('${groupId}')">Remove Selected</button>
+                </div>
+              ` : ''}
             </div>
 
             <!-- Available Section -->
             <div class="manage-section">
-              <div class="manage-section-title">Available Lists (${available.length})</div>
+               <div class="manage-section-header">
+                <div class="manage-section-title">Available Lists (${available.length})</div>
+                <button type="button" class="select-toggle" onclick="toggleSelectAll('available-cb')">Select All</button>
+              </div>
+
               ${available.length === 0 
-                ? `<div style="padding: 10px; color: var(--text-light); font-style: italic;">No available ungrouped lists</div>` 
+                ? `<div style="color: var(--text-light); font-style: italic; font-size: 0.9rem;">No available lists</div>` 
                 : available.map(list => `
-                  <div class="manage-list-item">
+                  <label class="manage-list-item">
+                    <input type="checkbox" class="manage-checkbox available-cb" value="${list.id}">
                     <div>
                       <div style="font-weight: 500;">${list.name}</div>
                       <div style="font-size: 0.75rem; color: var(--text-light);">${formatDate(list.createdAt)}</div>
                     </div>
-                    <!-- Pass 'add' action -->
-                    <button type="button" class="manage-btn-icon add-btn" onclick="updateListGroup('${list.id}', '${groupId}', '${groupId}')" title="Add to Group">＋</button>
-                  </div>
+                  </label>
                 `).join('')}
+
+              ${available.length > 0 ? `
+                 <div class="bulk-actions-bar">
+                    <button type="button" class="btn btn-success btn-sm btn-block" onclick="bulkAddLists('${groupId}')">Add Selected</button>
+                </div>
+              ` : ''}
             </div>
           </div>
 
           <div class="form-actions">
-            <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary">Save Changes</button>
+            <button type="button" class="btn btn-secondary" onclick="closeModal()">Close / Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Name</button>
           </div>
         </form>
       `);
     }
 
-    // Updated to support preserving the name input state
-    function updateListGroup(listId, newGroupId, currentModalGroupId) {
-      const list = state.lists.find(l => l.id === listId);
-      if (list) {
-        // Save the list change
-        list.groupId = newGroupId;
-        saveState();
+    // Helper: Toggle all checkboxes in a section
+    function toggleSelectAll(className) {
+        const checkboxes = document.querySelectorAll(`.${className}`);
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        checkboxes.forEach(cb => cb.checked = !allChecked);
+    }
+
+    // Bulk Action: Remove Selected from Group
+    function bulkRemoveLists(groupId) {
+        const checkboxes = document.querySelectorAll('.in-group-cb:checked');
+        if (checkboxes.length === 0) return;
+
+        const listIds = Array.from(checkboxes).map(cb => cb.value);
         
-        // Grab the current text in the name input so we don't lose it on re-render
+        // Update State
+        state.lists.forEach(list => {
+            if (listIds.includes(list.id)) {
+                list.groupId = null;
+            }
+        });
+
+        saveState();
+        reloadModalWithState(groupId);
+    }
+
+    // Bulk Action: Add Selected to Group
+    function bulkAddLists(groupId) {
+        const checkboxes = document.querySelectorAll('.available-cb:checked');
+        if (checkboxes.length === 0) return;
+
+        const listIds = Array.from(checkboxes).map(cb => cb.value);
+
+        // Update State
+        state.lists.forEach(list => {
+            if (listIds.includes(list.id)) {
+                list.groupId = groupId;
+            }
+        });
+
+        saveState();
+        reloadModalWithState(groupId);
+    }
+
+    // Helper to reload modal without losing name input
+    function reloadModalWithState(groupId) {
         const currentNameInput = document.getElementById('group-name');
         const preservedName = currentNameInput ? currentNameInput.value : null;
-
-        // Re-render the modal
-        showEditGroupModal(currentModalGroupId, preservedName);
-      }
+        showEditGroupModal(groupId, preservedName);
+        render(); // Background update
     }
 
     // Modal Functions
