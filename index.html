@@ -471,48 +471,6 @@
       border-radius: 4px;
     }
 
-    /* CSS for Bulk Management Features */
-    .manage-section {
-      margin-bottom: 20px;
-    }
-    .manage-section-title {
-      font-size: 0.9rem;
-      font-weight: 600;
-      color: var(--text-light);
-      margin-bottom: 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .manage-list-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 10px;
-      background: var(--bg);
-      border-radius: 6px;
-      margin-bottom: 8px;
-      transition: background 0.2s;
-    }
-    .manage-list-item:hover {
-      background: #eef2ff;
-    }
-    .manage-btn-icon {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      border: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      font-weight: bold;
-      transition: all 0.2s;
-    }
-    .add-btn { background: #d1fae5; color: #059669; }
-    .add-btn:hover { background: #10b981; color: white; }
-    .remove-btn { background: #fee2e2; color: #dc2626; }
-    .remove-btn:hover { background: #ef4444; color: white; }
-
     .empty-state {
       text-align: center;
       padding: 48px 24px;
@@ -1043,8 +1001,6 @@
                     <div class="list-card-header">
                       <div class="list-card-title">📁 ${group.name}</div>
                       <div style="display: flex; gap: 4px;">
-                        <!-- Feature 2: Bulk List Management Button -->
-                        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); showManageGroupListsModal('${group.id}')" title="Manage Lists in Group">Manage</button>
                         <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); showEditGroupModal('${group.id}')">✏️</button>
                         <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteGroup('${group.id}')">🗑️</button>
                       </div>
@@ -1092,11 +1048,9 @@
           
           <div class="chart-container">
             <canvas id="spending-chart"></canvas>
-            <div style="text-align: center; font-size: 0.8rem; color: var(--text-light); margin-top: 8px;">
-               Tap a bar to see details
-            </div>
           </div>
 
+           <!-- ADDED: New Chart Container for Cost Trend -->
           <div class="chart-container">
             <canvas id="cost-trend-chart"></canvas>
           </div>
@@ -1189,15 +1143,19 @@
         return '#4f46e5'; // Primary Blue
       });
 
-      // Split icon generation (existing code)
+      // PREPARE THE SPLIT ICON IMAGE
+      // We generate a tiny image that is permanently 50% Red / 50% Blue
       const splitCanvas = document.createElement('canvas');
       splitCanvas.width = 40;
       splitCanvas.height = 12;
       const sCtx = splitCanvas.getContext('2d');
+      // Left Half Red
       sCtx.fillStyle = '#ef4444';
       sCtx.fillRect(0, 0, 20, 12);
+      // Right Half Blue
       sCtx.fillStyle = '#4f46e5';
       sCtx.fillRect(20, 0, 20, 12);
+      
       const splitImage = new Image();
       splitImage.src = splitCanvas.toDataURL();
 
@@ -1216,38 +1174,19 @@
                 label: 'Spent',
                 data: spendingData,
                 backgroundColor: barColors,
-                borderRadius: 4,
-                // Feature 1: Large hit radius for mobile tapping
-                pointHitRadius: 20
+                borderRadius: 4
               },
               {
                 label: 'Budget',
                 data: budgetData,
                 backgroundColor: '#e5e7eb',
-                borderRadius: 4,
-                pointHitRadius: 20
+                borderRadius: 4
               }
             ]
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
-            // Feature 1: Interaction settings
-            interaction: {
-              mode: 'nearest',
-              axis: 'x',
-              intersect: true
-            },
-            // Feature 1: Click Event Handler
-            onClick: (e, elements) => {
-              if (elements && elements.length > 0) {
-                const index = elements[0].index;
-                const list = selectedLists[index];
-                if (list) {
-                  showListSummaryModal(list);
-                }
-              }
-            },
             plugins: {
               title: {
                 display: true,
@@ -1255,16 +1194,23 @@
               },
               legend: {
                 labels: {
+                  // Switch to pointStyle to support custom Images
                   usePointStyle: true,
+                  // Force the "Point" to be wide like a box
                   pointStyleWidth: 40,
+                  
                   generateLabels: function(chart) {
                     const original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                    
                     return original.map(label => {
                       if (label.text === 'Spent') {
+                        // Override the style to be our custom split image
                         label.pointStyle = splitImage;
+                        // Clear fill/stroke so they don't interfere
                         label.fillStyle = 'transparent';
                         label.strokeStyle = 'transparent';
                       } else {
+                        // Ensure other items (Budget) stay rectangular
                         label.pointStyle = 'rectRounded';
                       }
                       return label;
@@ -1274,31 +1220,14 @@
               },
               tooltip: {
                 callbacks: {
-                  // Feature 1: Enrich Tooltips
-                  label: function(context) {
-                    let label = context.dataset.label || '';
-                    if (label) {
-                      label += ': ';
-                    }
-                    if (context.parsed.y !== null) {
-                      label += formatCurrency(context.parsed.y);
-                    }
-                    return label;
-                  },
                   afterLabel: function(context) {
-                    const idx = context.dataIndex;
                     if (context.dataset.label === 'Spent') {
+                      const idx = context.dataIndex;
                       const budget = budgetData[idx];
                       const spent = spendingData[idx];
-                      let lines = [];
-                      if (budget > 0) {
-                        const diff = spent - budget;
-                        if (diff > 0) lines.push(`Over Budget by ${formatCurrency(diff)}!`);
-                        else lines.push(`Under Budget by ${formatCurrency(Math.abs(diff))}`);
+                      if (budget > 0 && spent > budget) {
+                        return `Over Budget by $${(spent - budget).toFixed(2)}!`;
                       }
-                      // Add item count to tooltip
-                      lines.push(`${itemsData[idx]} items purchased`);
-                      return lines;
                     }
                   }
                 }
@@ -1333,25 +1262,12 @@
               backgroundColor: 'rgba(245, 158, 11, 0.1)',
               fill: true,
               tension: 0.3,
-              pointBackgroundColor: '#f59e0b',
-              pointRadius: 6,
-              pointHitRadius: 20
+              pointBackgroundColor: '#f59e0b'
             }]
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
-            interaction: {
-              mode: 'nearest',
-              intersect: true
-            },
-            onClick: (e, elements) => {
-              if (elements && elements.length > 0) {
-                const index = elements[0].index;
-                const list = selectedLists[index];
-                if(list) showListSummaryModal(list);
-              }
-            },
             plugins: {
               title: {
                 display: true,
@@ -1386,25 +1302,12 @@
               borderColor: '#10b981',
               backgroundColor: 'rgba(16, 185, 129, 0.1)',
               fill: true,
-              tension: 0.3,
-              pointRadius: 6,
-              pointHitRadius: 20
+              tension: 0.3
             }]
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
-            interaction: {
-              mode: 'nearest',
-              intersect: true
-            },
-            onClick: (e, elements) => {
-              if (elements && elements.length > 0) {
-                const index = elements[0].index;
-                const list = selectedLists[index];
-                if(list) showListSummaryModal(list);
-              }
-            },
             plugins: {
               title: {
                 display: true,
@@ -1420,100 +1323,6 @@
         });
       }
     }
-
-    // Feature 1: Chart Popup Detail
-    function showListSummaryModal(list) {
-      const totalSpent = list.items.filter(i => i.purchased).reduce((sum, i) => sum + i.price, 0);
-      const itemsCount = list.items.filter(i => i.purchased).length;
-      
-      showModal(`
-        <div class="modal-header">
-          <h3 class="modal-title">${list.name}</h3>
-          <button class="close-btn" onclick="closeModal()">&times;</button>
-        </div>
-        <div style="text-align: center; margin-bottom: 20px;">
-           <div style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 4px;">${formatDate(list.createdAt)}</div>
-           <div class="summary-value">${formatCurrency(totalSpent)}</div>
-           <div style="font-size: 0.9rem; color: var(--text-light); margin-top: 4px;">
-             ${itemsCount} Items Purchased
-           </div>
-           ${list.budget ? `
-             <div style="margin-top: 8px; font-weight: 500; color: ${totalSpent > list.budget ? 'var(--danger)' : 'var(--success)'}">
-               ${totalSpent > list.budget ? 'Over Budget' : 'Under Budget'} (${formatCurrency(list.budget)})
-             </div>
-           ` : ''}
-        </div>
-        <div class="form-actions" style="justify-content: center;">
-          <button class="btn btn-secondary" onclick="closeModal()">Close</button>
-          <button class="btn btn-primary" onclick="closeModal(); openList('${list.id}'); switchView('lists');">View Full List</button>
-        </div>
-      `);
-    }
-
-    // Feature 2: Bulk List Management Modal
-    function showManageGroupListsModal(groupId) {
-      const group = state.groups.find(g => g.id === groupId);
-      const inGroup = state.lists.filter(l => l.groupId === groupId);
-      const available = state.lists.filter(l => !l.groupId); // Only show currently ungrouped lists
-
-      showModal(`
-        <div class="modal-header">
-          <h3 class="modal-title">Manage: ${group.name}</h3>
-          <button class="close-btn" onclick="closeModal(); render();">&times;</button>
-        </div>
-        
-        <div style="max-height: 60vh; overflow-y: auto;">
-          <!-- In Group Section -->
-          <div class="manage-section">
-            <div class="manage-section-title">In this Group (${inGroup.length})</div>
-            ${inGroup.length === 0 
-              ? `<div style="padding: 10px; color: var(--text-light); font-style: italic;">No lists in this group</div>` 
-              : inGroup.map(list => `
-                <div class="manage-list-item">
-                  <div>
-                    <div style="font-weight: 500;">${list.name}</div>
-                    <div style="font-size: 0.75rem; color: var(--text-light);">${formatDate(list.createdAt)}</div>
-                  </div>
-                  <button class="manage-btn-icon remove-btn" onclick="updateListGroup('${list.id}', null, '${groupId}')" title="Remove from Group">✕</button>
-                </div>
-              `).join('')}
-          </div>
-
-          <hr style="border: 0; border-top: 1px solid var(--border); margin: 16px 0;">
-
-          <!-- Available Section -->
-          <div class="manage-section">
-            <div class="manage-section-title">Available Lists (${available.length})</div>
-            ${available.length === 0 
-              ? `<div style="padding: 10px; color: var(--text-light); font-style: italic;">No available ungrouped lists</div>` 
-              : available.map(list => `
-                <div class="manage-list-item">
-                  <div>
-                    <div style="font-weight: 500;">${list.name}</div>
-                    <div style="font-size: 0.75rem; color: var(--text-light);">${formatDate(list.createdAt)}</div>
-                  </div>
-                  <button class="manage-btn-icon add-btn" onclick="updateListGroup('${list.id}', '${groupId}', '${groupId}')" title="Add to Group">＋</button>
-                </div>
-              `).join('')}
-          </div>
-        </div>
-
-        <div class="form-actions">
-          <button type="button" class="btn btn-primary" onclick="closeModal(); render();">Done</button>
-        </div>
-      `);
-    }
-
-    function updateListGroup(listId, newGroupId, currentModalGroupId) {
-      const list = state.lists.find(l => l.id === listId);
-      if (list) {
-        list.groupId = newGroupId;
-        saveState();
-        // Re-render the modal to show the list moving between sections
-        showManageGroupListsModal(currentModalGroupId);
-      }
-    }
-
 
     // Modal Functions
     function showModal(content) {
@@ -2196,5 +2005,3 @@
     // Initialize app
     init();
 </script>
-</body>
-</html>
