@@ -471,6 +471,92 @@
       border-radius: 4px;
     }
 
+    /* CSS for Bulk Management Features */
+    .manage-section {
+      margin-bottom: 24px;
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .manage-section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+    }
+    .manage-section-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--text-light);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .manage-list-item {
+      display: flex;
+      justify-content: flex-start; /* Changed from space-between */
+      align-items: center;
+      padding: 10px;
+      background: var(--card); /* Changed to card color for contrast against section bg */
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 8px;
+      transition: background 0.2s;
+    }
+    .manage-list-item:hover {
+      border-color: var(--primary);
+    }
+        /* New Checkbox Style */
+    .manage-checkbox {
+        width: 20px;
+        height: 20px;
+        margin-right: 12px;
+        cursor: pointer;
+        accent-color: var(--primary);
+    }
+
+    /* Bulk Actions Toolbar */
+    .bulk-actions-bar {
+        margin-top: 8px;
+        display: flex;
+        gap: 8px;
+    }
+    
+    .btn-block {
+        display: block;
+        width: 100%;
+        text-align: center;
+    }
+    
+    .text-sm {
+        font-size: 0.8rem;
+    }
+    
+    .select-toggle {
+        font-size: 0.8rem;
+        color: var(--primary);
+        cursor: pointer;
+        text-decoration: underline;
+        border: none;
+        background: none;
+        padding: 0;
+    }
+    .manage-btn-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-weight: bold;
+      transition: all 0.2s;
+    }
+    .add-btn { background: #d1fae5; color: #059669; }
+    .add-btn:hover { background: #10b981; color: white; }
+    .remove-btn { background: #fee2e2; color: #dc2626; }
+    .remove-btn:hover { background: #ef4444; color: white; }
+
     .empty-state {
       text-align: center;
       padding: 48px 24px;
@@ -1001,7 +1087,7 @@
                     <div class="list-card-header">
                       <div class="list-card-title">📁 ${group.name}</div>
                       <div style="display: flex; gap: 4px;">
-                        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); showEditGroupModal('${group.id}')">✏️</button>
+                        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); showEditGroupModal('${group.id}')">✏️ Edit</button>
                         <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteGroup('${group.id}')">🗑️</button>
                       </div>
                     </div>
@@ -1050,13 +1136,18 @@
             <canvas id="spending-chart"></canvas>
           </div>
 
-           <!-- ADDED: New Chart Container for Cost Trend -->
           <div class="chart-container">
             <canvas id="cost-trend-chart"></canvas>
+             <div style="text-align: center; font-size: 0.8rem; color: var(--text-light); margin-top: 8px;">
+               Tap chart area to see details
+            </div>
           </div>
 
           <div class="chart-container">
             <canvas id="items-chart"></canvas>
+             <div style="text-align: center; font-size: 0.8rem; color: var(--text-light); margin-top: 8px;">
+               Tap chart area to see details
+            </div>
           </div>
         </div>
       `;
@@ -1134,6 +1225,31 @@
       const budgetData = selectedLists.map(l => l.budget || 0);
       const itemsData = selectedLists.map(l => l.items.filter(i => i.purchased).length);
 
+      // --- Chart Click Handler Logic ---
+      const handleChartClick = (e, elements, chart) => {
+          let index = -1;
+
+          // 1. Try standard element detection
+          if (elements && elements.length > 0) {
+              index = elements[0].index;
+          } else {
+              // 2. Fallback: Calculate nearest X index based on click position
+              const canvasPosition = Chart.helpers.getRelativePosition(e, chart);
+              const dataX = chart.scales.x.getValueForPixel(canvasPosition.x);
+              
+              // Ensure we are within bounds
+              if (dataX >= 0 && dataX < selectedLists.length) {
+                  index = dataX;
+              }
+          }
+
+          // 3. Trigger Popup if valid index found
+          if (index !== -1) {
+              const list = selectedLists[index];
+              if(list) showListSummaryModal(list);
+          }
+      };
+
       // Determine bar colors based on budget status
       const barColors = spendingData.map((spent, index) => {
         const budget = budgetData[index];
@@ -1143,23 +1259,19 @@
         return '#4f46e5'; // Primary Blue
       });
 
-      // PREPARE THE SPLIT ICON IMAGE
-      // We generate a tiny image that is permanently 50% Red / 50% Blue
+      // Split icon generation (existing code)
       const splitCanvas = document.createElement('canvas');
       splitCanvas.width = 40;
       splitCanvas.height = 12;
       const sCtx = splitCanvas.getContext('2d');
-      // Left Half Red
       sCtx.fillStyle = '#ef4444';
       sCtx.fillRect(0, 0, 20, 12);
-      // Right Half Blue
       sCtx.fillStyle = '#4f46e5';
       sCtx.fillRect(20, 0, 20, 12);
-      
       const splitImage = new Image();
       splitImage.src = splitCanvas.toDataURL();
 
-      // Spending Chart
+      // Spending Chart (Standard Bar)
       const spendingCtx = document.getElementById('spending-chart');
       if (spendingCtx) {
         const existingChart = Chart.getChart(spendingCtx);
@@ -1188,29 +1300,19 @@
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-              title: {
-                display: true,
-                text: 'Spending vs Budget Over Time'
-              },
+              title: { display: true, text: 'Spending vs Budget Over Time' },
               legend: {
                 labels: {
-                  // Switch to pointStyle to support custom Images
                   usePointStyle: true,
-                  // Force the "Point" to be wide like a box
                   pointStyleWidth: 40,
-                  
                   generateLabels: function(chart) {
                     const original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                    
                     return original.map(label => {
                       if (label.text === 'Spent') {
-                        // Override the style to be our custom split image
                         label.pointStyle = splitImage;
-                        // Clear fill/stroke so they don't interfere
                         label.fillStyle = 'transparent';
                         label.strokeStyle = 'transparent';
                       } else {
-                        // Ensure other items (Budget) stay rectangular
                         label.pointStyle = 'rectRounded';
                       }
                       return label;
@@ -1221,12 +1323,12 @@
               tooltip: {
                 callbacks: {
                   afterLabel: function(context) {
+                    const idx = context.dataIndex;
                     if (context.dataset.label === 'Spent') {
-                      const idx = context.dataIndex;
                       const budget = budgetData[idx];
                       const spent = spendingData[idx];
                       if (budget > 0 && spent > budget) {
-                        return `Over Budget by $${(spent - budget).toFixed(2)}!`;
+                        return `Over Budget by ${formatCurrency(spent - budget)}!`;
                       }
                     }
                   }
@@ -1234,18 +1336,13 @@
               }
             },
             scales: {
-              y: {
-                beginAtZero: true,
-                ticks: {
-                  callback: value => '$' + value
-                }
-              }
+              y: { beginAtZero: true, ticks: { callback: value => '$' + value } }
             }
           }
         });
       }
 
-      // Cost Trend Chart
+      // Cost Trend Chart (Line Chart with Improved Click)
       const costTrendCtx = document.getElementById('cost-trend-chart');
       if (costTrendCtx) {
         const existingChart = Chart.getChart(costTrendCtx);
@@ -1262,31 +1359,26 @@
               backgroundColor: 'rgba(245, 158, 11, 0.1)',
               fill: true,
               tension: 0.3,
-              pointBackgroundColor: '#f59e0b'
+              pointBackgroundColor: '#f59e0b',
+              pointRadius: 6,
+              pointHitRadius: 50 // Increased Hit Radius
             }]
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            onClick: handleChartClick, // Use new handler
             plugins: {
-              title: {
-                display: true,
-                text: 'Total Cost / List Over Time'
-              }
+                title: { display: true, text: 'Total Cost / List Over Time' },
+                tooltip: { enabled: false } // Disable default tooltip
             },
-            scales: {
-              y: {
-                beginAtZero: true,
-                ticks: {
-                  callback: value => '$' + value
-                }
-              }
-            }
+            scales: { y: { beginAtZero: true, ticks: { callback: value => '$' + value } } }
           }
         });
       }
 
-      // Items Chart
+      // Items Chart (Line Chart with Improved Click)
       const itemsCtx = document.getElementById('items-chart');
       if (itemsCtx) {
         const existingChart = Chart.getChart(itemsCtx);
@@ -1302,26 +1394,189 @@
               borderColor: '#10b981',
               backgroundColor: 'rgba(16, 185, 129, 0.1)',
               fill: true,
-              tension: 0.3
+              tension: 0.3,
+              pointRadius: 6,
+              pointHitRadius: 50 // Increased Hit Radius
             }]
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            onClick: handleChartClick, // Use new handler
             plugins: {
-              title: {
-                display: true,
-                text: 'Items Purchased Over Time'
-              }
+              title: { display: true, text: 'Items Purchased Over Time' },
+              tooltip: { enabled: false } // Disable default tooltip
             },
-            scales: {
-              y: {
-                beginAtZero: true
-              }
-            }
+            scales: { y: { beginAtZero: true } }
           }
         });
       }
+    }
+
+    // Feature 1: Chart Popup Detail
+    function showListSummaryModal(list) {
+      const totalSpent = list.items.filter(i => i.purchased).reduce((sum, i) => sum + i.price, 0);
+      const itemsCount = list.items.filter(i => i.purchased).length;
+      
+      showModal(`
+        <div class="modal-header">
+          <h3 class="modal-title">${list.name}</h3>
+          <button class="close-btn" onclick="closeModal()">&times;</button>
+        </div>
+        <div style="text-align: center; margin-bottom: 20px;">
+           <div style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 4px;">${formatDate(list.createdAt)}</div>
+           <div class="summary-value">${formatCurrency(totalSpent)}</div>
+           <div style="font-size: 0.9rem; color: var(--text-light); margin-top: 4px;">
+             ${itemsCount} Items Purchased
+           </div>
+           ${list.budget ? `
+             <div style="margin-top: 8px; font-weight: 500; color: ${totalSpent > list.budget ? 'var(--danger)' : 'var(--success)'}">
+               ${totalSpent > list.budget ? 'Over Budget' : 'Under Budget'} (${formatCurrency(list.budget)})
+             </div>
+           ` : ''}
+        </div>
+        <div class="form-actions" style="justify-content: center;">
+          <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+          <button class="btn btn-primary" onclick="closeModal(); openList('${list.id}'); switchView('lists');">View Full List</button>
+        </div>
+      `);
+    }
+
+  // Feature 2: Merged Edit & Bulk List Management Modal
+    function showEditGroupModal(groupId, preservedName = null) {
+      const group = state.groups.find(g => g.id === groupId);
+      const inGroup = state.lists.filter(l => l.groupId === groupId);
+      const available = state.lists.filter(l => !l.groupId);
+      
+      // Use preservedName if we are re-rendering after a list move
+      const nameValue = preservedName !== null ? preservedName : group.name;
+
+      showModal(`
+        <div class="modal-header">
+          <h3 class="modal-title">Edit Group</h3>
+          <button class="close-btn" onclick="closeModal()">&times;</button>
+        </div>
+        <form onsubmit="updateGroup(event, '${groupId}')">
+          <div class="form-group">
+            <label class="form-label">Group Name *</label>
+            <input type="text" class="form-input" id="group-name" required value="${nameValue}">
+          </div>
+          
+          <hr style="border: 0; border-top: 1px solid var(--border); margin: 20px 0;">
+          
+          <div style="max-height: 50vh; overflow-y: auto;">
+            
+            <!-- In Group Section -->
+            <div class="manage-section">
+              <div class="manage-section-header">
+                <div class="manage-section-title">In this Group (${inGroup.length})</div>
+                <button type="button" class="select-toggle" onclick="toggleSelectAll('in-group-cb')">Select All</button>
+              </div>
+              
+              ${inGroup.length === 0 
+                ? `<div style="color: var(--text-light); font-style: italic; font-size: 0.9rem;">No lists in this group</div>` 
+                : inGroup.map(list => `
+                  <label class="manage-list-item">
+                    <input type="checkbox" class="manage-checkbox in-group-cb" value="${list.id}">
+                    <div>
+                      <div style="font-weight: 500;">${list.name}</div>
+                      <div style="font-size: 0.75rem; color: var(--text-light);">${formatDate(list.createdAt)}</div>
+                    </div>
+                  </label>
+                `).join('')}
+
+              ${inGroup.length > 0 ? `
+                <div class="bulk-actions-bar">
+                    <button type="button" class="btn btn-danger btn-sm btn-block" onclick="bulkRemoveLists('${groupId}')">Remove Selected</button>
+                </div>
+              ` : ''}
+            </div>
+
+            <!-- Available Section -->
+            <div class="manage-section">
+               <div class="manage-section-header">
+                <div class="manage-section-title">Available Lists (${available.length})</div>
+                <button type="button" class="select-toggle" onclick="toggleSelectAll('available-cb')">Select All</button>
+              </div>
+
+              ${available.length === 0 
+                ? `<div style="color: var(--text-light); font-style: italic; font-size: 0.9rem;">No available lists</div>` 
+                : available.map(list => `
+                  <label class="manage-list-item">
+                    <input type="checkbox" class="manage-checkbox available-cb" value="${list.id}">
+                    <div>
+                      <div style="font-weight: 500;">${list.name}</div>
+                      <div style="font-size: 0.75rem; color: var(--text-light);">${formatDate(list.createdAt)}</div>
+                    </div>
+                  </label>
+                `).join('')}
+
+              ${available.length > 0 ? `
+                 <div class="bulk-actions-bar">
+                    <button type="button" class="btn btn-success btn-sm btn-block" onclick="bulkAddLists('${groupId}')">Add Selected</button>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeModal()">Close / Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Name</button>
+          </div>
+        </form>
+      `);
+    }
+
+    // Helper: Toggle all checkboxes in a section
+    function toggleSelectAll(className) {
+        const checkboxes = document.querySelectorAll(`.${className}`);
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        checkboxes.forEach(cb => cb.checked = !allChecked);
+    }
+
+    // Bulk Action: Remove Selected from Group
+    function bulkRemoveLists(groupId) {
+        const checkboxes = document.querySelectorAll('.in-group-cb:checked');
+        if (checkboxes.length === 0) return;
+
+        const listIds = Array.from(checkboxes).map(cb => cb.value);
+        
+        // Update State
+        state.lists.forEach(list => {
+            if (listIds.includes(list.id)) {
+                list.groupId = null;
+            }
+        });
+
+        saveState();
+        reloadModalWithState(groupId);
+    }
+
+    // Bulk Action: Add Selected to Group
+    function bulkAddLists(groupId) {
+        const checkboxes = document.querySelectorAll('.available-cb:checked');
+        if (checkboxes.length === 0) return;
+
+        const listIds = Array.from(checkboxes).map(cb => cb.value);
+
+        // Update State
+        state.lists.forEach(list => {
+            if (listIds.includes(list.id)) {
+                list.groupId = groupId;
+            }
+        });
+
+        saveState();
+        reloadModalWithState(groupId);
+    }
+
+    // Helper to reload modal without losing name input
+    function reloadModalWithState(groupId) {
+        const currentNameInput = document.getElementById('group-name');
+        const preservedName = currentNameInput ? currentNameInput.value : null;
+        showEditGroupModal(groupId, preservedName);
+        render(); // Background update
     }
 
     // Modal Functions
@@ -1810,26 +2065,6 @@
       render();
     }
 
-    function showEditGroupModal(groupId) {
-      const group = state.groups.find(g => g.id === groupId);
-      showModal(`
-        <div class="modal-header">
-          <h3 class="modal-title">Edit Group</h3>
-          <button class="close-btn" onclick="closeModal()">&times;</button>
-        </div>
-        <form onsubmit="updateGroup(event, '${groupId}')">
-          <div class="form-group">
-            <label class="form-label">Group Name *</label>
-            <input type="text" class="form-input" id="group-name" required value="${group.name}">
-          </div>
-          <div class="form-actions">
-            <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary">Save Changes</button>
-          </div>
-        </form>
-      `);
-    }
-
     function updateGroup(e, groupId) {
       e.preventDefault();
       const group = state.groups.find(g => g.id === groupId);
@@ -2005,3 +2240,5 @@
     // Initialize app
     init();
 </script>
+</body>
+</html>
