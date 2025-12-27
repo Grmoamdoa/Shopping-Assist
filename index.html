@@ -678,6 +678,51 @@
       dropdown.classList.toggle('show');
     }
 
+    // UI Helper for Pricing Modals
+    function updatePriceInputState() {
+      const mode = document.querySelector('input[name="price-mode"]:checked').value;
+      const priceInput = document.getElementById('item-price');
+      const qtyInput = document.getElementById('item-quantity');
+      const label = document.getElementById('price-input-label');
+      const preview = document.getElementById('price-total-preview');
+      
+      const val = parseFloat(priceInput.value) || 0;
+      const qty = parseInt(qtyInput.value) || 1;
+      
+      // Update Label
+      label.textContent = mode === 'unit' ? 'Price per Unit' : 'Total Price';
+      
+      // Calculate Live Total
+      let total = 0;
+      if (mode === 'unit') {
+        total = val * qty;
+      } else {
+        total = val;
+      }
+      
+      preview.textContent = `Total: ${formatCurrency(total)}`;
+      preview.style.color = mode === 'unit' ? 'var(--text-light)' : 'var(--primary)';
+    }
+
+    // Logic to convert input value when user manually toggles mode
+    function togglePriceMode(newMode) {
+      const priceInput = document.getElementById('item-price');
+      const qtyInput = document.getElementById('item-quantity');
+      const currentVal = parseFloat(priceInput.value);
+      const qty = parseInt(qtyInput.value) || 1;
+
+      if (!isNaN(currentVal)) {
+        if (newMode === 'unit') {
+          // Switching Total -> Unit (Divide by qty)
+          priceInput.value = (currentVal / qty).toFixed(2);
+        } else {
+          // Switching Unit -> Total (Multiply by qty)
+          priceInput.value = (currentVal * qty).toFixed(2);
+        }
+      }
+      updatePriceInputState();
+    }
+    
     // View Management
     function switchView(view) {
       state.currentView = view;
@@ -872,6 +917,22 @@
     }
 
     function renderItem(item, listId) {
+      // Logic for displaying unit price details
+      let priceDisplay = formatCurrency(item.price);
+      let unitDetail = '';
+      
+      if (item.priceMode === 'unit' && item.quantity > 1) {
+        // Show unit price calculation if relevant
+        unitDetail = `<div style="font-size: 0.75rem; color: var(--text-light); margin-bottom: 2px;">
+          ${formatCurrency(item.unitPrice)} ea
+        </div>`;
+      } else if (item.priceMode === 'total' && item.quantity > 1) {
+         // Optional: Indication that this was a manual total entry
+         unitDetail = `<div style="font-size: 0.75rem; color: var(--text-light); margin-bottom: 2px;">
+          Bulk / Total
+        </div>`;
+      }
+
       return `
         <div class="item-card ${item.purchased ? 'purchased' : 'todo'}">
           <input type="checkbox" class="item-checkbox" 
@@ -886,8 +947,11 @@
               ${item.notes ? `• ${item.notes}` : ''}
             </div>
           </div>
-          <div class="item-price">${formatCurrency(item.price)}</div>
-          <div class="item-actions">
+          <div style="text-align: right;">
+            ${unitDetail}
+            <div class="item-price">${priceDisplay}</div>
+          </div>
+          <div class="item-actions" style="margin-left: 12px;">
             <button class="btn btn-secondary btn-sm" onclick="showEditItemModal('${item.id}')">✏️</button>
             <button class="btn btn-danger btn-sm" onclick="deleteItem('${listId}', '${item.id}')">🗑️</button>
           </div>
@@ -1070,9 +1134,37 @@
       const budgetData = selectedLists.map(l => l.budget || 0);
       const itemsData = selectedLists.map(l => l.items.filter(i => i.purchased).length);
 
+      // Determine bar colors based on budget status
+      const barColors = spendingData.map((spent, index) => {
+        const budget = budgetData[index];
+        if (budget > 0 && spent > budget) {
+          return '#ef4444'; // Red for over budget
+        }
+        return '#4f46e5'; // Primary Blue
+      });
+
+      // PREPARE THE SPLIT ICON IMAGE
+      // We generate a tiny image that is permanently 50% Red / 50% Blue
+      const splitCanvas = document.createElement('canvas');
+      splitCanvas.width = 40;
+      splitCanvas.height = 12;
+      const sCtx = splitCanvas.getContext('2d');
+      // Left Half Red
+      sCtx.fillStyle = '#ef4444';
+      sCtx.fillRect(0, 0, 20, 12);
+      // Right Half Blue
+      sCtx.fillStyle = '#4f46e5';
+      sCtx.fillRect(20, 0, 20, 12);
+      
+      const splitImage = new Image();
+      splitImage.src = splitCanvas.toDataURL();
+
       // Spending Chart
       const spendingCtx = document.getElementById('spending-chart');
       if (spendingCtx) {
+        const existingChart = Chart.getChart(spendingCtx);
+        if (existingChart) existingChart.destroy();
+
         new Chart(spendingCtx, {
           type: 'bar',
           data: {
@@ -1081,7 +1173,7 @@
               {
                 label: 'Spent',
                 data: spendingData,
-                backgroundColor: '#4f46e5',
+                backgroundColor: barColors,
                 borderRadius: 4
               },
               {
@@ -1099,6 +1191,46 @@
               title: {
                 display: true,
                 text: 'Spending vs Budget Over Time'
+              },
+              legend: {
+                labels: {
+                  // Switch to pointStyle to support custom Images
+                  usePointStyle: true,
+                  // Force the "Point" to be wide like a box
+                  pointStyleWidth: 40,
+                  
+                  generateLabels: function(chart) {
+                    const original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                    
+                    return original.map(label => {
+                      if (label.text === 'Spent') {
+                        // Override the style to be our custom split image
+                        label.pointStyle = splitImage;
+                        // Clear fill/stroke so they don't interfere
+                        label.fillStyle = 'transparent';
+                        label.strokeStyle = 'transparent';
+                      } else {
+                        // Ensure other items (Budget) stay rectangular
+                        label.pointStyle = 'rectRounded';
+                      }
+                      return label;
+                    });
+                  }
+                }
+              },
+              tooltip: {
+                callbacks: {
+                  afterLabel: function(context) {
+                    if (context.dataset.label === 'Spent') {
+                      const idx = context.dataIndex;
+                      const budget = budgetData[idx];
+                      const spent = spendingData[idx];
+                      if (budget > 0 && spent > budget) {
+                        return `Over Budget by $${(spent - budget).toFixed(2)}!`;
+                      }
+                    }
+                  }
+                }
               }
             },
             scales: {
@@ -1113,9 +1245,12 @@
         });
       }
 
-      // ADDED: Cost Trend Chart
+      // Cost Trend Chart
       const costTrendCtx = document.getElementById('cost-trend-chart');
       if (costTrendCtx) {
+        const existingChart = Chart.getChart(costTrendCtx);
+        if (existingChart) existingChart.destroy();
+
         new Chart(costTrendCtx, {
           type: 'line',
           data: {
@@ -1123,7 +1258,7 @@
             datasets: [{
               label: 'Total Cost per Trip',
               data: spendingData,
-              borderColor: '#f59e0b', // Warning color (Orange)
+              borderColor: '#f59e0b',
               backgroundColor: 'rgba(245, 158, 11, 0.1)',
               fill: true,
               tension: 0.3,
@@ -1154,6 +1289,9 @@
       // Items Chart
       const itemsCtx = document.getElementById('items-chart');
       if (itemsCtx) {
+        const existingChart = Chart.getChart(itemsCtx);
+        if (existingChart) existingChart.destroy();
+
         new Chart(itemsCtx, {
           type: 'line',
           data: {
@@ -1321,14 +1459,35 @@
               <input type="checkbox" id="item-purchased" onchange="togglePriceRequired()"> Already purchased
             </label>
           </div>
-          <div class="form-group">
-            <label class="form-label">Price</label>
-            <input type="number" class="form-input" id="item-price" step="0.01" min="0" placeholder="0.00">
+          
+          <!-- Pricing Section -->
+          <div class="form-group" style="background: var(--bg); padding: 12px; border-radius: 8px;">
+            <div style="display: flex; gap: 16px; margin-bottom: 12px;">
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="radio" name="price-mode" value="unit" checked onchange="togglePriceMode('unit')"> 
+                <span>Per Unit</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="radio" name="price-mode" value="total" onchange="togglePriceMode('total')"> 
+                <span>Total Price</span>
+              </label>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div>
+                <label class="form-label" id="price-input-label">Price per Unit</label>
+                <input type="number" class="form-input" id="item-price" step="0.01" min="0" placeholder="0.00" oninput="updatePriceInputState()">
+              </div>
+              <div>
+                <label class="form-label">Quantity</label>
+                <input type="number" class="form-input" id="item-quantity" value="1" min="1" oninput="updatePriceInputState()">
+              </div>
+            </div>
+            <div id="price-total-preview" style="text-align: right; margin-top: 8px; font-weight: 600; font-size: 0.9rem;">
+              Total: $0.00
+            </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">Quantity</label>
-            <input type="number" class="form-input" id="item-quantity" value="1" min="1">
-          </div>
+
           <div class="form-group">
             <label class="form-label">Notes (optional)</label>
             <input type="text" class="form-input" id="item-notes" placeholder="e.g., 2% fat">
@@ -1344,26 +1503,8 @@
           </div>
         </form>
       `);
-    }
-
-    function togglePriceRequired() {
-      const purchased = document.getElementById('item-purchased').checked;
-      const priceInput = document.getElementById('item-price');
-      priceInput.required = purchased;
-    }
-
-    function previewImage(e) {
-      const file = e.target.files[0];
-      const preview = document.getElementById('image-preview');
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          preview.innerHTML = `<img src="${e.target.result}" style="max-width: 100%; max-height: 150px; border-radius: 8px;">`;
-        };
-        reader.readAsDataURL(file);
-      } else {
-        preview.innerHTML = '';
-      }
+      // Initialize state
+      updatePriceInputState();
     }
 
     async function addItem(e) {
@@ -1380,11 +1521,29 @@
       }
 
       const purchased = document.getElementById('item-purchased').checked;
+      const quantity = parseInt(document.getElementById('item-quantity').value) || 1;
+      const inputPrice = parseFloat(document.getElementById('item-price').value) || 0;
+      const priceMode = document.querySelector('input[name="price-mode"]:checked').value;
+
+      // Calculate logic
+      let finalPrice = 0;
+      let unitPrice = null;
+
+      if (priceMode === 'unit') {
+        unitPrice = inputPrice;
+        finalPrice = unitPrice * quantity;
+      } else {
+        finalPrice = inputPrice;
+        unitPrice = quantity > 0 ? finalPrice / quantity : 0;
+      }
+
       const item = {
         id: generateId(),
         name: document.getElementById('item-name').value,
-        price: parseFloat(document.getElementById('item-price').value) || 0,
-        quantity: parseInt(document.getElementById('item-quantity').value) || 1,
+        price: finalPrice,
+        unitPrice: unitPrice,
+        priceMode: priceMode,
+        quantity: quantity,
         notes: document.getElementById('item-notes').value,
         image: imageData,
         purchased: purchased,
@@ -1403,6 +1562,10 @@
 
     function showEditItemModal(itemId) {
       const item = state.currentList.items.find(i => i.id === itemId);
+      // Determine initial values
+      const mode = item.priceMode || 'total'; // Default to total for old items
+      const displayPrice = mode === 'unit' ? (item.unitPrice || 0) : item.price;
+
       showModal(`
         <div class="modal-header">
           <h3 class="modal-title">Edit Item</h3>
@@ -1413,14 +1576,35 @@
             <label class="form-label">Item Name *</label>
             <input type="text" class="form-input" id="item-name" required value="${item.name}">
           </div>
-          <div class="form-group">
-            <label class="form-label">Price</label>
-            <input type="number" class="form-input" id="item-price" step="0.01" min="0" value="${item.price || ''}">
+
+          <!-- Pricing Section -->
+          <div class="form-group" style="background: var(--bg); padding: 12px; border-radius: 8px;">
+             <div style="display: flex; gap: 16px; margin-bottom: 12px;">
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="radio" name="price-mode" value="unit" ${mode === 'unit' ? 'checked' : ''} onchange="togglePriceMode('unit')"> 
+                <span>Per Unit</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="radio" name="price-mode" value="total" ${mode !== 'unit' ? 'checked' : ''} onchange="togglePriceMode('total')"> 
+                <span>Total Price</span>
+              </label>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div>
+                <label class="form-label" id="price-input-label">Price</label>
+                <input type="number" class="form-input" id="item-price" step="0.01" min="0" value="${displayPrice}" oninput="updatePriceInputState()">
+              </div>
+              <div>
+                <label class="form-label">Quantity</label>
+                <input type="number" class="form-input" id="item-quantity" value="${item.quantity}" min="1" oninput="updatePriceInputState()">
+              </div>
+            </div>
+            <div id="price-total-preview" style="text-align: right; margin-top: 8px; font-weight: 600; font-size: 0.9rem;">
+              Total: ${formatCurrency(item.price)}
+            </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">Quantity</label>
-            <input type="number" class="form-input" id="item-quantity" value="${item.quantity}" min="1">
-          </div>
+
           <div class="form-group">
             <label class="form-label">Notes</label>
             <input type="text" class="form-input" id="item-notes" value="${item.notes || ''}">
@@ -1439,6 +1623,8 @@
           </div>
         </form>
       `);
+      // Initial Label Update
+      updatePriceInputState();
     }
 
     async function updateItem(e, itemId) {
@@ -1447,9 +1633,21 @@
       const item = list.items.find(i => i.id === itemId);
       
       item.name = document.getElementById('item-name').value;
-      item.price = parseFloat(document.getElementById('item-price').value) || 0;
       item.quantity = parseInt(document.getElementById('item-quantity').value) || 1;
       item.notes = document.getElementById('item-notes').value;
+      
+      const inputPrice = parseFloat(document.getElementById('item-price').value) || 0;
+      const priceMode = document.querySelector('input[name="price-mode"]:checked').value;
+      
+      item.priceMode = priceMode;
+
+      if (priceMode === 'unit') {
+        item.unitPrice = inputPrice;
+        item.price = inputPrice * item.quantity;
+      } else {
+        item.price = inputPrice;
+        item.unitPrice = item.quantity > 0 ? item.price / item.quantity : 0;
+      }
 
       const removeImage = document.getElementById('remove-image')?.checked;
       if (removeImage) {
@@ -1473,20 +1671,44 @@
     }
 
     function showCheckOffModal(item) {
+      // Logic same as Edit - prefill based on what we know
+      const mode = item.priceMode || 'total';
+      const displayPrice = mode === 'unit' ? (item.unitPrice || 0) : item.price;
+
       showModal(`
         <div class="modal-header">
           <h3 class="modal-title">Check Off: ${item.name}</h3>
           <button class="close-btn" onclick="closeModal(); render();">&times;</button>
         </div>
         <form onsubmit="checkOffItem(event, '${item.id}')">
-          <div class="form-group">
-            <label class="form-label">Price </label>
-            <input type="number" class="form-input" id="item-price" step="0.01" min="0" value="${item.price || ''}" placeholder="0.00">
+          
+          <div class="form-group" style="background: var(--bg); padding: 12px; border-radius: 8px;">
+             <div style="display: flex; gap: 16px; margin-bottom: 12px;">
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="radio" name="price-mode" value="unit" ${mode === 'unit' ? 'checked' : ''} onchange="togglePriceMode('unit')"> 
+                <span>Per Unit</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="radio" name="price-mode" value="total" ${mode !== 'unit' ? 'checked' : ''} onchange="togglePriceMode('total')"> 
+                <span>Total Price</span>
+              </label>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div>
+                <label class="form-label" id="price-input-label">Price</label>
+                <input type="number" class="form-input" id="item-price" step="0.01" min="0" value="${displayPrice}" placeholder="0.00" oninput="updatePriceInputState()">
+              </div>
+              <div>
+                <label class="form-label">Quantity</label>
+                <input type="number" class="form-input" id="item-quantity" value="${item.quantity}" min="1" oninput="updatePriceInputState()">
+              </div>
+            </div>
+            <div id="price-total-preview" style="text-align: right; margin-top: 8px; font-weight: 600; font-size: 0.9rem;">
+              Total: ${formatCurrency(item.price)}
+            </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">Quantity</label>
-            <input type="number" class="form-input" id="item-quantity" value="${item.quantity}" min="1">
-          </div>
+
           <div class="form-group">
             <label class="form-label">Notes</label>
             <input type="text" class="form-input" id="item-notes" value="${item.notes || ''}">
@@ -1502,6 +1724,7 @@
           </div>
         </form>
       `);
+      updatePriceInputState();
     }
 
     async function checkOffItem(e, itemId) {
@@ -1509,11 +1732,23 @@
       const list = state.lists.find(l => l.id === state.currentList.id);
       const item = list.items.find(i => i.id === itemId);
       
-      item.price = parseFloat(document.getElementById('item-price').value) || 0;
-      item.quantity = parseInt(document.getElementById('item-quantity').value) || 1;
+      const quantity = parseInt(document.getElementById('item-quantity').value) || 1;
+      const inputPrice = parseFloat(document.getElementById('item-price').value) || 0;
+      const priceMode = document.querySelector('input[name="price-mode"]:checked').value;
+      
+      item.quantity = quantity;
       item.notes = document.getElementById('item-notes').value;
       item.purchased = true;
       item.purchasedAt = new Date().toISOString();
+      item.priceMode = priceMode;
+
+      if (priceMode === 'unit') {
+        item.unitPrice = inputPrice;
+        item.price = inputPrice * quantity;
+      } else {
+        item.price = inputPrice;
+        item.unitPrice = quantity > 0 ? item.price / quantity : 0;
+      }
 
       const imageInput = document.getElementById('item-image');
       if (imageInput.files[0]) {
