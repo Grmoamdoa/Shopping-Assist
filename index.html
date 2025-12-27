@@ -1370,6 +1370,10 @@
             interaction: { mode: 'index', intersect: false },
             onClick: handleChartClick, // Use new handler
             plugins: { title: { display: true, text: 'Total Cost / List Over Time' } },
+                          tooltip: {
+                enabled: false
+              }
+            },
             scales: { y: { beginAtZero: true, ticks: { callback: value => '$' + value } } }
           }
         });
@@ -1402,6 +1406,10 @@
             interaction: { mode: 'index', intersect: false },
             onClick: handleChartClick, // Use new handler
             plugins: { title: { display: true, text: 'Items Purchased Over Time' } },
+              tooltip: {
+                enabled: false
+              }
+            },
             scales: { y: { beginAtZero: true } }
           }
         });
