@@ -1370,14 +1370,21 @@
             interaction: { mode: 'index', intersect: false },
             onClick: handleChartClick, // Use new handler
             plugins: { title: { display: true, text: 'Total Cost / List Over Time' } },
-                          tooltip: {
+              tooltip: {
                 enabled: false
               }
+              // ------------------------------------------------
             },
-            scales: { y: { beginAtZero: true, ticks: { callback: value => '$' + value } } }
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  callback: value => '$' + value
+                }
+              }
+            }
           }
         });
-      }
 
       // Items Chart (Line Chart with Improved Click)
       const itemsCtx = document.getElementById('items-chart');
@@ -1406,15 +1413,18 @@
             interaction: { mode: 'index', intersect: false },
             onClick: handleChartClick, // Use new handler
             plugins: { title: { display: true, text: 'Items Purchased Over Time' } },
-              tooltip: {
+             tooltip: {
                 enabled: false
               }
+              // ------------------------------------------------
             },
-            scales: { y: { beginAtZero: true } }
+            scales: {
+              y: {
+                beginAtZero: true
+              }
+            }
           }
         });
-      }
-    }
 
     // Feature 1: Chart Popup Detail
     function showListSummaryModal(list) {
