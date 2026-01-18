@@ -1036,6 +1036,18 @@
 
     function openList(id) {
       state.currentList = state.lists.find(l => l.id === id);
+      
+      // If we are coming from another view (like Groups or Search), switch to Lists view context
+      if (state.currentView !== 'lists') {
+          state.currentView = 'lists';
+          state.viewingGroupId = null; // Clear group drill-down state
+          
+          // Update Nav UI
+          document.querySelectorAll('.nav-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.view === 'lists');
+          });
+      }
+      
       render();
     }
 
