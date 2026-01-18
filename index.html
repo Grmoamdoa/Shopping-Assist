@@ -172,6 +172,7 @@
       cursor: pointer;
       transition: transform 0.2s, box-shadow 0.2s;
       border: 2px solid transparent;
+      position: relative;
     }
 
     .list-card:hover {
@@ -237,6 +238,7 @@
       margin-bottom: 32px;
     }
 
+    /* Updated Group Header Styles for Collapse */
     .group-header {
       display: flex;
       justify-content: space-between;
@@ -244,12 +246,46 @@
       margin-bottom: 16px;
       padding-bottom: 8px;
       border-bottom: 2px solid var(--border);
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.2s;
+      padding: 8px;
+      border-radius: 8px 8px 0 0;
+    }
+    
+    .group-header:hover {
+        background-color: rgba(0,0,0,0.03);
+    }
+
+    .group-title-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 8px;
     }
 
     .group-title {
       font-size: 1.1rem;
       font-weight: 600;
       color: var(--text-light);
+    }
+    
+    .chevron {
+        transition: transform 0.2s;
+        display: inline-block;
+        font-size: 0.8rem;
+    }
+    
+    .chevron.rotated {
+        transform: rotate(-90deg);
+    }
+
+    /* Group Detail View Styles */
+    .clickable-group-card {
+        cursor: pointer;
+    }
+    .clickable-group-card .btn {
+        position: relative; 
+        z-index: 2; /* Ensure buttons sit above the clickable card area */
     }
 
     .modal-overlay {
@@ -542,22 +578,6 @@
         background: none;
         padding: 0;
     }
-    .manage-btn-icon {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      border: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      font-weight: bold;
-      transition: all 0.2s;
-    }
-    .add-btn { background: #d1fae5; color: #059669; }
-    .add-btn:hover { background: #10b981; color: white; }
-    .remove-btn { background: #fee2e2; color: #dc2626; }
-    .remove-btn:hover { background: #ef4444; color: white; }
 
     .empty-state {
       text-align: center;
@@ -712,7 +732,6 @@
             </button>
             <div id="export-dropdown" class="dropdown-content">
               <div class="dropdown-item" onclick="exportAll()">Export All Data (JSON)</div>
-              <!-- Moved Export All Excel here -->
               <div class="dropdown-item" onclick="exportAllToExcel()">Export All Data (Excel)</div>
               <div class="dropdown-item" onclick="showExportModal()">Export Selected...</div>
             </div>
@@ -741,12 +760,18 @@
       groups: [],
       currentView: 'lists',
       currentList: null,
-      selectedListsForAnalytics: []
+      selectedListsForAnalytics: [],
+      viewingGroupId: null // For Groups Drill-down
+    };
+
+    let uiState = {
+      collapsedGroups: {} // Format: { "groupId": true/false, "ungrouped": true/false }
     };
 
     // Initialize
     function init() {
       loadState();
+      loadUIState();
       render();
       document.addEventListener('click', (e) => {
         if (!e.target.closest('.dropdown')) {
@@ -770,6 +795,24 @@
         lists: state.lists,
         groups: state.groups
       }));
+    }
+
+    function loadUIState() {
+      const savedUI = localStorage.getItem('shoppingTrackerUI');
+      if (savedUI) {
+        uiState = JSON.parse(savedUI);
+      }
+      if (!uiState.collapsedGroups) uiState.collapsedGroups = {};
+    }
+
+    function saveUIState() {
+      localStorage.setItem('shoppingTrackerUI', JSON.stringify(uiState));
+    }
+
+    function toggleGroupCollapse(groupId) {
+      uiState.collapsedGroups[groupId] = !uiState.collapsedGroups[groupId];
+      saveUIState();
+      render();
     }
 
     // Utility Functions
@@ -805,7 +848,7 @@
     }
 
     function togglePriceRequired() {
-      // Placeholder for specific price UI logic if needed in future
+      // Placeholder
     }
 
     function previewImage(event) {
@@ -865,6 +908,7 @@
     function switchView(view) {
       state.currentView = view;
       state.currentList = null;
+      state.viewingGroupId = null; // Reset group drill-down
       document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.view === view);
       });
@@ -878,7 +922,7 @@
           main.innerHTML = state.currentList ? renderListDetail() : renderLists();
           break;
         case 'groups':
-          main.innerHTML = renderGroups();
+          main.innerHTML = state.viewingGroupId ? renderGroupDetail(state.viewingGroupId) : renderGroups();
           break;
         case 'analytics':
           main.innerHTML = renderAnalytics();
@@ -914,27 +958,39 @@
           </div>
         `;
       } else {
+        // Render Grouped Lists
         Object.entries(grouped).forEach(([groupId, lists]) => {
           const group = state.groups.find(g => g.id === groupId);
           if (group) {
+            const isCollapsed = uiState.collapsedGroups[groupId];
             html += `
               <div class="group-section">
-                <div class="group-header">
-                  <span class="group-title">📁 ${group.name}</span>
+                <div class="group-header" onclick="toggleGroupCollapse('${groupId}')">
+                  <div class="group-title-wrapper">
+                    <span class="chevron ${isCollapsed ? 'rotated' : ''}">▼</span>
+                    <span class="group-title">📁 ${group.name}</span>
+                    <span style="font-size: 0.8rem; color: var(--text-light);">(${lists.length})</span>
+                  </div>
                 </div>
-                <div class="grid">${lists.map(renderListCard).join('')}</div>
+                ${!isCollapsed ? `<div class="grid">${lists.map(renderListCard).join('')}</div>` : ''}
               </div>
             `;
           }
         });
 
+        // Render Ungrouped Lists
         if (ungrouped.length > 0) {
+          const isCollapsed = uiState.collapsedGroups['ungrouped'];
           html += `
             <div class="group-section">
-              <div class="group-header">
-                <span class="group-title">Ungrouped</span>
+              <div class="group-header" onclick="toggleGroupCollapse('ungrouped')">
+                 <div class="group-title-wrapper">
+                    <span class="chevron ${isCollapsed ? 'rotated' : ''}">▼</span>
+                    <span class="group-title">Ungrouped</span>
+                    <span style="font-size: 0.8rem; color: var(--text-light);">(${ungrouped.length})</span>
+                 </div>
               </div>
-              <div class="grid">${ungrouped.map(renderListCard).join('')}</div>
+              ${!isCollapsed ? `<div class="grid">${ungrouped.map(renderListCard).join('')}</div>` : ''}
             </div>
           `;
         }
@@ -981,6 +1037,12 @@
     function openList(id) {
       state.currentList = state.lists.find(l => l.id === id);
       render();
+    }
+
+    function openListFromDetail(id) {
+        state.currentView = 'lists';
+        state.currentList = state.lists.find(l => l.id === id);
+        render();
     }
 
     // List Detail View
@@ -1110,8 +1172,14 @@
       }
     }
 
-    // Groups View
+    // Groups Overview
     function renderGroups() {
+      // Calculate ungrouped stats
+      const validGroupIds = new Set(state.groups.map(g => g.id));
+      const ungroupedLists = state.lists.filter(l => !l.groupId || !validGroupIds.has(l.groupId));
+      const ungroupedSpent = ungroupedLists.reduce((sum, l) => 
+          sum + l.items.filter(i => i.purchased).reduce((s, i) => s + i.price, 0), 0);
+
       return `
         <div class="card">
           <div class="card-header">
@@ -1119,7 +1187,7 @@
             <button class="btn btn-primary" onclick="showNewGroupModal()">+ New Group</button>
           </div>
 
-          ${state.groups.length === 0 ? `
+          ${state.groups.length === 0 && ungroupedLists.length === 0 ? `
             <div class="empty-state">
               <div class="empty-state-icon">📁</div>
               <p>No groups yet. Create groups to organize your lists!</p>
@@ -1131,7 +1199,7 @@
                 const totalSpent = listsInGroup.reduce((sum, l) => 
                   sum + l.items.filter(i => i.purchased).reduce((s, i) => s + i.price, 0), 0);
                 return `
-                  <div class="list-card">
+                  <div class="list-card clickable-group-card" onclick="openGroupDetail('${group.id}')">
                     <div class="list-card-header">
                       <div class="list-card-title">📁 ${group.name}</div>
                       <div style="display: flex; gap: 4px;">
@@ -1146,10 +1214,79 @@
                   </div>
                 `;
               }).join('')}
+
+              ${ungroupedLists.length > 0 ? `
+                  <div class="list-card clickable-group-card" onclick="openGroupDetail('ungrouped')">
+                    <div class="list-card-header">
+                      <div class="list-card-title">Ungrouped Lists</div>
+                    </div>
+                    <div class="list-card-stats">
+                      <span>📋 ${ungroupedLists.length} lists</span>
+                      <span>💰 ${formatCurrency(ungroupedSpent)} spent</span>
+                    </div>
+                  </div>
+              ` : ''}
             </div>
           `}
         </div>
       `;
+    }
+
+    function openGroupDetail(groupId) {
+        state.viewingGroupId = groupId;
+        render();
+    }
+
+    // Group Detail View (Drill-down)
+    function renderGroupDetail(groupId) {
+        let groupName = 'Ungrouped';
+        let lists = [];
+
+        if (groupId === 'ungrouped') {
+            const validGroupIds = new Set(state.groups.map(g => g.id));
+            lists = state.lists.filter(l => !l.groupId || !validGroupIds.has(l.groupId));
+        } else {
+            const group = state.groups.find(g => g.id === groupId);
+            if (!group) {
+                // Handle case where group deleted while viewing
+                state.viewingGroupId = null;
+                return renderGroups();
+            }
+            groupName = group.name;
+            lists = state.lists.filter(l => l.groupId === groupId);
+        }
+
+        return `
+            <div class="back-btn" onclick="state.viewingGroupId = null; render();">
+              ← Back to Groups
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h2 class="card-title">${groupId === 'ungrouped' ? '' : '📁'} ${groupName}</h2>
+                        <div style="color: var(--text-light); font-size: 0.875rem;">
+                            ${lists.length} lists
+                        </div>
+                    </div>
+                    ${groupId !== 'ungrouped' ? `
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-secondary btn-sm" onclick="showEditGroupModal('${groupId}')">✏️ Edit Group</button>
+                    </div>
+                    ` : ''}
+                </div>
+
+                ${lists.length === 0 ? `
+                    <div class="empty-state">
+                        <p>No lists in this group.</p>
+                    </div>
+                ` : `
+                    <div class="grid">
+                        ${lists.map(renderListCard).join('')}
+                    </div>
+                `}
+            </div>
+        `;
     }
 
     // Analytics View
@@ -1471,7 +1608,7 @@
         </div>
         <div class="form-actions" style="justify-content: center;">
           <button class="btn btn-secondary" onclick="closeModal()">Close</button>
-          <button class="btn btn-primary" onclick="closeModal(); openList('${list.id}'); switchView('lists');">View Full List</button>
+          <button class="btn btn-primary" onclick="closeModal(); openListFromDetail('${list.id}');">View Full List</button>
         </div>
       `);
     }
@@ -2375,7 +2512,6 @@
           <hr style="border: 0; border-top: 1px solid var(--border); margin: 4px 0;">
           <div style="display: flex; gap: 8px; justify-content: flex-end;">
              <button type="button" class="btn btn-success" onclick="exportSelectedToExcel()">Export Selected to Excel</button>
-             <!-- Removed Export All to Excel from modal since it is now in the main menu -->
           </div>
         </div>
       `);
