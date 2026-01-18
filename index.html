@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Shopping Tracker</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- ADDED: SheetJS for Excel Export -->
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
   <style>
     :root {
       --primary: #4f46e5;
@@ -324,6 +326,7 @@
       gap: 12px;
       justify-content: flex-end;
       margin-top: 24px;
+      flex-wrap: wrap;
     }
 
     .item-list {
@@ -493,10 +496,10 @@
     }
     .manage-list-item {
       display: flex;
-      justify-content: flex-start; /* Changed from space-between */
+      justify-content: flex-start;
       align-items: center;
       padding: 10px;
-      background: var(--card); /* Changed to card color for contrast against section bg */
+      background: var(--card); 
       border: 1px solid var(--border);
       border-radius: 6px;
       margin-bottom: 8px;
@@ -505,7 +508,6 @@
     .manage-list-item:hover {
       border-color: var(--primary);
     }
-        /* New Checkbox Style */
     .manage-checkbox {
         width: 20px;
         height: 20px;
@@ -709,8 +711,8 @@
               📤 Export
             </button>
             <div id="export-dropdown" class="dropdown-content">
-              <div class="dropdown-item" onclick="exportAll()">Export All Data</div>
-              <div class="dropdown-item" onclick="showExportModal()">Export Selected...</div>
+              <div class="dropdown-item" onclick="exportAll()">Export All Data (JSON)</div>
+              <div class="dropdown-item" onclick="showExportModal()">Export Selected / Excel...</div>
             </div>
           </div>
           <button class="btn btn-secondary" onclick="document.getElementById('import-file').click()">
@@ -774,6 +776,7 @@
     }
 
     function formatDate(dateStr) {
+      if (!dateStr) return '';
       return new Date(dateStr).toLocaleDateString('en-US', {
         month: 'short', day: 'numeric', year: 'numeric'
       });
@@ -799,10 +802,8 @@
       dropdown.classList.toggle('show');
     }
 
-    // Ticket 0: Missing Safety Functions
     function togglePriceRequired() {
       // Placeholder for specific price UI logic if needed in future
-      // Currently ensures checkboxes calling this don't throw errors
     }
 
     function previewImage(event) {
@@ -817,7 +818,6 @@
       }
     }
 
-    // UI Helper for Pricing Modals
     function updatePriceInputState() {
       const modeEl = document.querySelector('input[name="price-mode"]:checked');
       if(!modeEl) return;
@@ -830,10 +830,8 @@
       const val = parseFloat(priceInput.value) || 0;
       const qty = parseInt(qtyInput.value) || 1;
       
-      // Update Label
       label.textContent = mode === 'unit' ? 'Price per Unit' : 'Total Price';
       
-      // Calculate Live Total
       let total = 0;
       if (mode === 'unit') {
         total = val * qty;
@@ -845,7 +843,6 @@
       preview.style.color = mode === 'unit' ? 'var(--text-light)' : 'var(--primary)';
     }
 
-    // Logic to convert input value when user manually toggles mode
     function togglePriceMode(newMode) {
       const priceInput = document.getElementById('item-price');
       const qtyInput = document.getElementById('item-quantity');
@@ -854,10 +851,8 @@
 
       if (!isNaN(currentVal)) {
         if (newMode === 'unit') {
-          // Switching Total -> Unit (Divide by qty)
           priceInput.value = (currentVal / qty).toFixed(2);
         } else {
-          // Switching Unit -> Total (Multiply by qty)
           priceInput.value = (currentVal * qty).toFixed(2);
         }
       }
@@ -892,11 +887,7 @@
 
     // Lists View
     function renderLists() {
-      // TICKET 1C: Robust Group Handling
-      // Identify groups that actually exist in the state
       const validGroupIds = new Set(state.groups.map(g => g.id));
-      
-      // If a list has a groupId that is NOT in validGroupIds, treat it as ungrouped
       const ungrouped = state.lists.filter(l => !l.groupId || !validGroupIds.has(l.groupId));
       const grouped = {};
 
@@ -921,7 +912,6 @@
           </div>
         `;
       } else {
-        // Render grouped lists
         Object.entries(grouped).forEach(([groupId, lists]) => {
           const group = state.groups.find(g => g.id === groupId);
           if (group) {
@@ -936,7 +926,6 @@
           }
         });
 
-        // Render ungrouped lists
         if (ungrouped.length > 0) {
           html += `
             <div class="group-section">
@@ -959,8 +948,6 @@
       const purchasedItems = list.items.filter(i => i.purchased).length;
       const budgetPercent = list.budget ? (totalSpent / list.budget) * 100 : 0;
       const budgetClass = budgetPercent > 100 ? 'budget-over' : budgetPercent > 80 ? 'budget-warning' : 'budget-under';
-
-      // Find group name for tag, being safe about existing groups
       const groupName = state.groups.find(g => g.id === list.groupId)?.name;
 
       return `
@@ -1066,23 +1053,19 @@
     }
 
     function renderItem(item, listId) {
-      // Logic for displaying unit price details
       let priceDisplay = formatCurrency(item.price);
       let unitDetail = '';
       
       if (item.priceMode === 'unit' && item.quantity > 1) {
-        // Show unit price calculation if relevant
         unitDetail = `<div style="font-size: 0.75rem; color: var(--text-light); margin-bottom: 2px;">
           ${formatCurrency(item.unitPrice)} ea
         </div>`;
       } else if (item.priceMode === 'total' && item.quantity > 1) {
-         // Optional: Indication that this was a manual total entry
          unitDetail = `<div style="font-size: 0.75rem; color: var(--text-light); margin-bottom: 2px;">
           Bulk / Total
         </div>`;
       }
 
-      // Ticket 2E: Add stable ID for scroll targeting
       return `
         <div id="item-${item.id}" class="item-card ${item.purchased ? 'purchased' : 'todo'}">
           <input type="checkbox" class="item-checkbox" 
@@ -1114,7 +1097,6 @@
       const item = list.items.find(i => i.id === itemId);
       
       if (purchased && !item.purchased) {
-        // Show modal to enter price/details when checking off
         showCheckOffModal(item);
       } else {
         item.purchased = purchased;
@@ -1232,8 +1214,7 @@
         sum + l.items.filter(i => i.purchased).reduce((s, i) => s + i.price, 0), 0);
       const totalItems = selectedLists.reduce((sum, l) => sum + l.items.filter(i => i.purchased).length, 0);
       const avgPerList = totalSpent / selectedLists.length;
-      const totalBudget = selectedLists.reduce((sum, l) => sum + (l.budget || 0), 0);
-
+      
       return `
         <div class="summary-grid">
           <div class="summary-card">
@@ -1289,41 +1270,31 @@
       const budgetData = selectedLists.map(l => l.budget || 0);
       const itemsData = selectedLists.map(l => l.items.filter(i => i.purchased).length);
 
-      // --- Chart Click Handler Logic ---
       const handleChartClick = (e, elements, chart) => {
           let index = -1;
-
-          // 1. Try standard element detection
           if (elements && elements.length > 0) {
               index = elements[0].index;
           } else {
-              // 2. Fallback: Calculate nearest X index based on click position
               const canvasPosition = Chart.helpers.getRelativePosition(e, chart);
               const dataX = chart.scales.x.getValueForPixel(canvasPosition.x);
-              
-              // Ensure we are within bounds
               if (dataX >= 0 && dataX < selectedLists.length) {
                   index = dataX;
               }
           }
-
-          // 3. Trigger Popup if valid index found
           if (index !== -1) {
               const list = selectedLists[index];
               if(list) showListSummaryModal(list);
           }
       };
 
-      // Determine bar colors based on budget status
       const barColors = spendingData.map((spent, index) => {
         const budget = budgetData[index];
         if (budget > 0 && spent > budget) {
-          return '#ef4444'; // Red for over budget
+          return '#ef4444';
         }
-        return '#4f46e5'; // Primary Blue
+        return '#4f46e5';
       });
 
-      // Split icon generation (existing code)
       const splitCanvas = document.createElement('canvas');
       splitCanvas.width = 40;
       splitCanvas.height = 12;
@@ -1335,7 +1306,6 @@
       const splitImage = new Image();
       splitImage.src = splitCanvas.toDataURL();
 
-      // Spending Chart (Standard Bar)
       const spendingCtx = document.getElementById('spending-chart');
       if (spendingCtx) {
         const existingChart = Chart.getChart(spendingCtx);
@@ -1406,7 +1376,6 @@
         });
       }
 
-      // Cost Trend Chart (Line Chart with Improved Click)
       const costTrendCtx = document.getElementById('cost-trend-chart');
       if (costTrendCtx) {
         const existingChart = Chart.getChart(costTrendCtx);
@@ -1425,24 +1394,23 @@
               tension: 0.3,
               pointBackgroundColor: '#f59e0b',
               pointRadius: 6,
-              pointHitRadius: 50 // Increased Hit Radius
+              pointHitRadius: 50
             }]
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
-            onClick: handleChartClick, // Use new handler
+            onClick: handleChartClick,
             plugins: {
                 title: { display: true, text: 'Total Cost / List Over Time' },
-                tooltip: { enabled: false } // Disable default tooltip
+                tooltip: { enabled: false }
             },
             scales: { y: { beginAtZero: true, ticks: { callback: value => '$' + value } } }
           }
         });
       }
 
-      // Items Chart (Line Chart with Improved Click)
       const itemsCtx = document.getElementById('items-chart');
       if (itemsCtx) {
         const existingChart = Chart.getChart(itemsCtx);
@@ -1460,17 +1428,17 @@
               fill: true,
               tension: 0.3,
               pointRadius: 6,
-              pointHitRadius: 50 // Increased Hit Radius
+              pointHitRadius: 50
             }]
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
-            onClick: handleChartClick, // Use new handler
+            onClick: handleChartClick,
             plugins: {
               title: { display: true, text: 'Items Purchased Over Time' },
-              tooltip: { enabled: false } // Disable default tooltip
+              tooltip: { enabled: false }
             },
             scales: { y: { beginAtZero: true } }
           }
@@ -1478,7 +1446,6 @@
       }
     }
 
-    // Feature 1: Chart Popup Detail
     function showListSummaryModal(list) {
       const totalSpent = list.items.filter(i => i.purchased).reduce((sum, i) => sum + i.price, 0);
       const itemsCount = list.items.filter(i => i.purchased).length;
@@ -1507,13 +1474,10 @@
       `);
     }
 
-  // Feature 2: Merged Edit & Bulk List Management Modal
     function showEditGroupModal(groupId, preservedName = null) {
       const group = state.groups.find(g => g.id === groupId);
       const inGroup = state.lists.filter(l => l.groupId === groupId);
       const available = state.lists.filter(l => !l.groupId);
-      
-      // Use preservedName if we are re-rendering after a list move
       const nameValue = preservedName !== null ? preservedName : group.name;
 
       showModal(`
@@ -1531,7 +1495,6 @@
           
           <div style="max-height: 50vh; overflow-y: auto;">
             
-            <!-- In Group Section -->
             <div class="manage-section">
               <div class="manage-section-header">
                 <div class="manage-section-title">In this Group (${inGroup.length})</div>
@@ -1557,7 +1520,6 @@
               ` : ''}
             </div>
 
-            <!-- Available Section -->
             <div class="manage-section">
                <div class="manage-section-header">
                 <div class="manage-section-title">Available Lists (${available.length})</div>
@@ -1592,58 +1554,47 @@
       `);
     }
 
-    // Helper: Toggle all checkboxes in a section
     function toggleSelectAll(className) {
         const checkboxes = document.querySelectorAll(`.${className}`);
         const allChecked = Array.from(checkboxes).every(cb => cb.checked);
         checkboxes.forEach(cb => cb.checked = !allChecked);
     }
 
-    // Bulk Action: Remove Selected from Group
     function bulkRemoveLists(groupId) {
         const checkboxes = document.querySelectorAll('.in-group-cb:checked');
         if (checkboxes.length === 0) return;
 
         const listIds = Array.from(checkboxes).map(cb => cb.value);
-        
-        // Update State
         state.lists.forEach(list => {
             if (listIds.includes(list.id)) {
                 list.groupId = null;
             }
         });
-
         saveState();
         reloadModalWithState(groupId);
     }
 
-    // Bulk Action: Add Selected to Group
     function bulkAddLists(groupId) {
         const checkboxes = document.querySelectorAll('.available-cb:checked');
         if (checkboxes.length === 0) return;
 
         const listIds = Array.from(checkboxes).map(cb => cb.value);
-
-        // Update State
         state.lists.forEach(list => {
             if (listIds.includes(list.id)) {
                 list.groupId = groupId;
             }
         });
-
         saveState();
         reloadModalWithState(groupId);
     }
 
-    // Helper to reload modal without losing name input
     function reloadModalWithState(groupId) {
         const currentNameInput = document.getElementById('group-name');
         const preservedName = currentNameInput ? currentNameInput.value : null;
         showEditGroupModal(groupId, preservedName);
-        render(); // Background update
+        render();
     }
 
-    // Ticket 2: Global Search Features
     function showGlobalSearchModal() {
         showModal(`
             <div class="modal-header">
@@ -1687,13 +1638,10 @@
         }
 
         let results = [];
-
         state.lists.forEach(list => {
             const groupName = state.groups.find(g => g.id === list.groupId)?.name || 'Ungrouped';
-            
             list.items.forEach(item => {
                 if (purchasedOnly && !item.purchased) return;
-                
                 if (item.name.toLowerCase().includes(query)) {
                     results.push({
                         item: item,
@@ -1704,11 +1652,9 @@
             });
         });
 
-        // Sort: Purchased first (newest to oldest), then unpurchased (newest created to oldest)
         results.sort((a, b) => {
             if (a.item.purchased && !b.item.purchased) return -1;
             if (!a.item.purchased && b.item.purchased) return 1;
-            
             const dateA = new Date(a.item.purchased ? a.item.purchasedAt : a.item.createdAt);
             const dateB = new Date(b.item.purchased ? b.item.purchasedAt : b.item.createdAt);
             return dateB - dateA;
@@ -1734,20 +1680,16 @@
         closeModal();
         switchView('lists');
         openList(listId);
-        
-        // Wait for render to complete so DOM element exists
         setTimeout(() => {
             const el = document.getElementById('item-' + itemId);
             if (el) {
                 el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 el.classList.add('search-highlight');
-                // Remove class after animation finishes to allow re-triggering later
                 setTimeout(() => el.classList.remove('search-highlight'), 2000);
             }
         }, 150);
     }
 
-    // Modal Functions
     function showModal(content) {
       const modal = document.createElement('div');
       modal.className = 'modal-overlay';
@@ -1883,7 +1825,6 @@
             </label>
           </div>
           
-          <!-- Pricing Section -->
           <div class="form-group" style="background: var(--bg); padding: 12px; border-radius: 8px;">
             <div style="display: flex; gap: 16px; margin-bottom: 12px;">
               <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
@@ -1926,7 +1867,6 @@
           </div>
         </form>
       `);
-      // Initialize state
       updatePriceInputState();
     }
 
@@ -1948,7 +1888,6 @@
       const inputPrice = parseFloat(document.getElementById('item-price').value) || 0;
       const priceMode = document.querySelector('input[name="price-mode"]:checked').value;
 
-      // Calculate logic
       let finalPrice = 0;
       let unitPrice = null;
 
@@ -1985,8 +1924,7 @@
 
     function showEditItemModal(itemId) {
       const item = state.currentList.items.find(i => i.id === itemId);
-      // Determine initial values
-      const mode = item.priceMode || 'total'; // Default to total for old items
+      const mode = item.priceMode || 'total';
       const displayPrice = mode === 'unit' ? (item.unitPrice || 0) : item.price;
 
       showModal(`
@@ -2000,7 +1938,6 @@
             <input type="text" class="form-input" id="item-name" required value="${item.name}">
           </div>
 
-          <!-- Pricing Section -->
           <div class="form-group" style="background: var(--bg); padding: 12px; border-radius: 8px;">
              <div style="display: flex; gap: 16px; margin-bottom: 12px;">
               <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
@@ -2046,7 +1983,6 @@
           </div>
         </form>
       `);
-      // Initial Label Update
       updatePriceInputState();
     }
 
@@ -2094,7 +2030,6 @@
     }
 
     function showCheckOffModal(item) {
-      // Logic same as Edit - prefill based on what we know
       const mode = item.priceMode || 'total';
       const displayPrice = mode === 'unit' ? (item.unitPrice || 0) : item.price;
 
@@ -2253,14 +2188,150 @@
       }
     }
 
-    // Export/Import
+    // --- Export Logic Start ---
+
+    // 1. Download Helper (Blob)
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // 2. Reusable Selection Logic
+    function getSelectedExportData() {
+      const selectedListIds = [...document.querySelectorAll('.export-list-cb:checked')].map(cb => cb.value);
+      const selectedGroupIds = new Set([...document.querySelectorAll('.export-group-cb:checked')].map(cb => cb.value));
+
+      if (selectedListIds.length === 0 && selectedGroupIds.size === 0) {
+        return null;
+      }
+
+      const filteredLists = state.lists.filter(l => selectedListIds.includes(l.id));
+
+      // Auto-include groups logic
+      filteredLists.forEach(list => {
+          if (list.groupId) {
+              selectedGroupIds.add(list.groupId);
+          }
+      });
+
+      const filteredGroups = state.groups.filter(g => selectedGroupIds.has(g.id));
+
+      return {
+        lists: filteredLists,
+        groups: filteredGroups
+      };
+    }
+
+    // 3. Row Builders for Excel
+    function buildItemsRows(lists, groups) {
+      const groupMap = {};
+      groups.forEach(g => groupMap[g.id] = g.name);
+
+      const rows = [];
+      lists.forEach(list => {
+        const groupName = list.groupId && groupMap[list.groupId] ? groupMap[list.groupId] : 'Ungrouped';
+        list.items.forEach(item => {
+           rows.push({
+             group_name: groupName,
+             list_name: list.name,
+             list_created_at: list.createdAt,
+             list_updated_at: list.updatedAt,
+             item_name: item.name,
+             quantity: item.quantity || 1,
+             unit_price: item.unitPrice || 0,
+             total_price: item.price, // Stored final price
+             price_mode: item.priceMode || 'total',
+             purchased: item.purchased,
+             purchased_at: item.purchasedAt || '',
+             item_notes: item.notes || '',
+             has_image: !!item.image
+           });
+        });
+      });
+      return rows;
+    }
+
+    function buildListSummaryRows(lists, groups) {
+      const groupMap = {};
+      groups.forEach(g => groupMap[g.id] = g.name);
+
+      return lists.map(list => {
+         const purchasedItems = list.items.filter(i => i.purchased);
+         const totalSpent = purchasedItems.reduce((sum, i) => sum + i.price, 0);
+         const budget = list.budget || 0;
+         
+         let status = 'OK';
+         if (budget > 0 && totalSpent > budget) status = 'OVER BUDGET';
+
+         return {
+           group_name: list.groupId && groupMap[list.groupId] ? groupMap[list.groupId] : 'Ungrouped',
+           list_name: list.name,
+           created_at: list.createdAt,
+           updated_at: list.updatedAt,
+           budget: budget,
+           purchased_items_count: purchasedItems.length,
+           total_spent: totalSpent,
+           status: status
+         };
+      });
+    }
+
+    function buildAccountingReportRows(lists) {
+       return generateAccountingReport(lists); // Reusing existing helper
+    }
+
+    function buildWorkbook(lists, groups) {
+      const itemsRows = buildItemsRows(lists, groups);
+      const summaryRows = buildListSummaryRows(lists, groups);
+      const reportRows = buildAccountingReportRows(lists);
+
+      const wb = XLSX.utils.book_new();
+      
+      const wsItems = XLSX.utils.json_to_sheet(itemsRows);
+      const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
+      const wsReport = XLSX.utils.json_to_sheet(reportRows);
+
+      XLSX.utils.book_append_sheet(wb, wsItems, "Items");
+      XLSX.utils.book_append_sheet(wb, wsSummary, "Lists Summary");
+      XLSX.utils.book_append_sheet(wb, wsReport, "Accounting Report");
+
+      return wb;
+    }
+
+    function exportToExcel(lists, groups, filename) {
+      const wb = buildWorkbook(lists, groups);
+      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      downloadBlob(blob, filename);
+    }
+
+    // 4. Excel Export Action Handlers
+    function exportSelectedToExcel() {
+      const selection = getSelectedExportData();
+      if (!selection) {
+        alert('Please select at least one list or group to export.');
+        return;
+      }
+      exportToExcel(selection.lists, selection.groups, 'shopping-tracker-selected.xlsx');
+      closeModal();
+    }
+
+    function exportAllToExcel() {
+      exportToExcel(state.lists, state.groups, 'shopping-tracker-all.xlsx');
+      closeModal(); // If modal was open via dropdown, though this button is in modal
+    }
+
+    // Export Data / UI
     function exportAll() {
       const data = {
         version: 1,
         exportedAt: new Date().toISOString(),
         lists: state.lists,
         groups: state.groups,
-        // ADDED: Readable report for accounting
         accounting_report: generateAccountingReport(state.lists) 
       };
       downloadJSON(data, 'shopping-tracker-all.json');
@@ -2294,21 +2365,24 @@
             `).join('')}
           </div>
         </div>
-        <div class="form-actions">
-          <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-          <button type="button" class="btn btn-primary" onclick="exportSelected()">Export Selected</button>
+        <div class="form-actions" style="flex-direction: column; align-items: stretch; gap: 8px;">
+          <div style="display: flex; gap: 8px; justify-content: flex-end;">
+             <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+             <button type="button" class="btn btn-primary" onclick="exportSelected()">Export Selected (JSON)</button>
+          </div>
+          <hr style="border: 0; border-top: 1px solid var(--border); margin: 4px 0;">
+          <div style="display: flex; gap: 8px; justify-content: flex-end;">
+             <button type="button" class="btn btn-success" onclick="exportSelectedToExcel()">Export Selected to Excel</button>
+             <button type="button" class="btn btn-success" onclick="exportAllToExcel()">Export All to Excel</button>
+          </div>
         </div>
       `);
     }
 
-    // NEW HELPER: Generates a flat, human-readable array of spending
     function generateAccountingReport(lists) {
       return lists.map(list => {
-        // Calculate totals
         const purchasedItems = list.items.filter(i => i.purchased);
         const totalSpent = purchasedItems.reduce((sum, i) => sum + i.price, 0);
-        
-        // Return a clean, flat object
         return {
           date: formatDate(list.createdAt),
           list_name: list.name,
@@ -2321,31 +2395,19 @@
     }
 
     function exportSelected() {
-      const selectedListIds = [...document.querySelectorAll('.export-list-cb:checked')].map(cb => cb.value);
-      const selectedGroupIds = new Set([...document.querySelectorAll('.export-group-cb:checked')].map(cb => cb.value));
-
-      const filteredLists = state.lists.filter(l => selectedListIds.includes(l.id));
-
-      // TICKET 1A: Auto-include groups referenced by selected lists
-      filteredLists.forEach(list => {
-          if (list.groupId) {
-              selectedGroupIds.add(list.groupId);
-          }
-      });
+      const selection = getSelectedExportData();
+      if (!selection) {
+        alert('Please select at least one list or group to export.');
+        return;
+      }
 
       const data = {
         version: 1,
         exportedAt: new Date().toISOString(),
-        lists: filteredLists,
-        groups: state.groups.filter(g => selectedGroupIds.has(g.id)),
-        // ADDED: Readable report for accounting based on selection
-        accounting_report: generateAccountingReport(filteredLists)
+        lists: selection.lists,
+        groups: selection.groups,
+        accounting_report: generateAccountingReport(selection.lists)
       };
-
-      if (data.lists.length === 0 && data.groups.length === 0) {
-        alert('Please select at least one list or group to export.');
-        return;
-      }
 
       downloadJSON(data, 'shopping-tracker-export.json');
       closeModal();
@@ -2353,12 +2415,7 @@
 
     function downloadJSON(data, filename) {
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, filename);
     }
 
     function importData(event) {
@@ -2374,7 +2431,6 @@
             throw new Error('Invalid file format');
           }
 
-          // Merge groups
           if (data.groups) {
             data.groups.forEach(importedGroup => {
               const existing = state.groups.find(g => g.id === importedGroup.id);
@@ -2386,12 +2442,10 @@
             });
           }
 
-          // Merge lists
           if (data.lists) {
             data.lists.forEach(importedList => {
               const existing = state.lists.find(l => l.id === importedList.id);
               if (existing) {
-                // Update if imported is newer
                 if (new Date(importedList.updatedAt) > new Date(existing.updatedAt)) {
                   Object.assign(existing, importedList);
                 }
@@ -2401,7 +2455,6 @@
             });
           }
 
-          // TICKET 1B: Normalize orphan groups (lists pointing to groups that don't exist)
           const validGroupIds = new Set(state.groups.map(g => g.id));
           let orphanCount = 0;
           state.lists.forEach(l => {
