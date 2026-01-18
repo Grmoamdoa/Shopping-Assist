@@ -619,6 +619,31 @@
     .hidden {
       display: none !important;
     }
+    
+    /* Search Features CSS */
+    .search-result-item {
+        padding: 12px;
+        border-bottom: 1px solid var(--border);
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    .search-result-item:hover {
+        background: var(--bg);
+    }
+    .search-result-meta {
+        font-size: 0.8rem;
+        color: var(--text-light);
+        margin-top: 4px;
+        display: flex;
+        justify-content: space-between;
+    }
+    .search-highlight {
+        animation: highlight-pulse 2s ease-out;
+    }
+    @keyframes highlight-pulse {
+        0% { background-color: rgba(79, 70, 229, 0.2); box-shadow: 0 0 10px rgba(79, 70, 229, 0.1); }
+        100% { background-color: transparent; }
+    }
 
     @media (max-width: 640px) {
       .app {
@@ -676,6 +701,9 @@
       <div class="header-top">
         <h1>🛒 Shopping Tracker</h1>
         <div class="header-actions">
+          <button class="btn btn-secondary" onclick="showGlobalSearchModal()">
+             🔍 Search
+          </button>
           <div class="dropdown">
             <button class="btn btn-secondary" onclick="toggleDropdown('export-dropdown')">
               📤 Export
@@ -751,6 +779,13 @@
       });
     }
 
+    function formatDateTime(dateStr) {
+      if (!dateStr) return '';
+      return new Date(dateStr).toLocaleString('en-US', {
+        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+      });
+    }
+
     function formatCurrency(amount) {
       return '$' + (amount || 0).toFixed(2);
     }
@@ -764,9 +799,29 @@
       dropdown.classList.toggle('show');
     }
 
+    // Ticket 0: Missing Safety Functions
+    function togglePriceRequired() {
+      // Placeholder for specific price UI logic if needed in future
+      // Currently ensures checkboxes calling this don't throw errors
+    }
+
+    function previewImage(event) {
+      const file = event.target.files[0];
+      const preview = document.getElementById('image-preview');
+      if (file && preview) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            preview.innerHTML = `<img src="${e.target.result}" style="max-width: 100%; max-height: 150px; border-radius: 8px;">`;
+        }
+        reader.readAsDataURL(file);
+      }
+    }
+
     // UI Helper for Pricing Modals
     function updatePriceInputState() {
-      const mode = document.querySelector('input[name="price-mode"]:checked').value;
+      const modeEl = document.querySelector('input[name="price-mode"]:checked');
+      if(!modeEl) return;
+      const mode = modeEl.value;
       const priceInput = document.getElementById('item-price');
       const qtyInput = document.getElementById('item-quantity');
       const label = document.getElementById('price-input-label');
@@ -837,10 +892,15 @@
 
     // Lists View
     function renderLists() {
-      const ungrouped = state.lists.filter(l => !l.groupId);
+      // TICKET 1C: Robust Group Handling
+      // Identify groups that actually exist in the state
+      const validGroupIds = new Set(state.groups.map(g => g.id));
+      
+      // If a list has a groupId that is NOT in validGroupIds, treat it as ungrouped
+      const ungrouped = state.lists.filter(l => !l.groupId || !validGroupIds.has(l.groupId));
       const grouped = {};
 
-      state.lists.filter(l => l.groupId).forEach(list => {
+      state.lists.filter(l => l.groupId && validGroupIds.has(l.groupId)).forEach(list => {
         if (!grouped[list.groupId]) grouped[list.groupId] = [];
         grouped[list.groupId].push(list);
       });
@@ -900,6 +960,9 @@
       const budgetPercent = list.budget ? (totalSpent / list.budget) * 100 : 0;
       const budgetClass = budgetPercent > 100 ? 'budget-over' : budgetPercent > 80 ? 'budget-warning' : 'budget-under';
 
+      // Find group name for tag, being safe about existing groups
+      const groupName = state.groups.find(g => g.id === list.groupId)?.name;
+
       return `
         <div class="list-card" onclick="openList('${list.id}')">
           <div class="list-card-header">
@@ -907,7 +970,7 @@
               <div class="list-card-title">${list.name}</div>
               <div class="list-card-date">${formatDate(list.createdAt)}</div>
             </div>
-            ${list.groupId ? `<span class="tag tag-group">${state.groups.find(g => g.id === list.groupId)?.name || ''}</span>` : ''}
+            ${groupName ? `<span class="tag tag-group">${groupName}</span>` : ''}
           </div>
           <div class="list-card-stats">
             <span>🛍️ ${purchasedItems}/${totalItems} items</span>
@@ -949,7 +1012,7 @@
               <h2 class="card-title">${list.name}</h2>
               <div style="color: var(--text-light); font-size: 0.875rem;">
                 Created ${formatDate(list.createdAt)}
-                ${list.groupId ? `• 📁 ${state.groups.find(g => g.id === list.groupId)?.name}` : ''}
+                ${list.groupId ? `• 📁 ${state.groups.find(g => g.id === list.groupId)?.name || 'Ungrouped'}` : ''}
               </div>
             </div>
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
@@ -1019,8 +1082,9 @@
         </div>`;
       }
 
+      // Ticket 2E: Add stable ID for scroll targeting
       return `
-        <div class="item-card ${item.purchased ? 'purchased' : 'todo'}">
+        <div id="item-${item.id}" class="item-card ${item.purchased ? 'purchased' : 'todo'}">
           <input type="checkbox" class="item-checkbox" 
             ${item.purchased ? 'checked' : ''} 
             onchange="toggleItemPurchased('${listId}', '${item.id}', this.checked)">
@@ -1577,6 +1641,110 @@
         const preservedName = currentNameInput ? currentNameInput.value : null;
         showEditGroupModal(groupId, preservedName);
         render(); // Background update
+    }
+
+    // Ticket 2: Global Search Features
+    function showGlobalSearchModal() {
+        showModal(`
+            <div class="modal-header">
+                <h3 class="modal-title">Search Everything</h3>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="form-group">
+                <input type="text" id="globalSearchInput" class="form-input" 
+                       placeholder="Type to search items..." 
+                       onkeyup="debounceSearch()" autofocus>
+            </div>
+            <div class="form-group" style="display: flex; gap: 8px;">
+                <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                    <input type="checkbox" id="globalSearchPurchasedOnly" onchange="runGlobalSearch()">
+                    <span style="font-size: 0.9rem;">Purchased only</span>
+                </label>
+            </div>
+            <div id="globalSearchResults" style="max-height: 50vh; overflow-y: auto;">
+                <div style="color: var(--text-light); text-align: center; padding: 20px;">
+                    Start typing to search...
+                </div>
+            </div>
+        `);
+        setTimeout(() => document.getElementById('globalSearchInput').focus(), 50);
+    }
+
+    let searchTimeout;
+    function debounceSearch() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(runGlobalSearch, 200);
+    }
+
+    function runGlobalSearch() {
+        const query = document.getElementById('globalSearchInput').value.toLowerCase().trim();
+        const purchasedOnly = document.getElementById('globalSearchPurchasedOnly').checked;
+        const resultsContainer = document.getElementById('globalSearchResults');
+
+        if (!query) {
+            resultsContainer.innerHTML = '<div style="color: var(--text-light); text-align: center; padding: 20px;">Start typing to search...</div>';
+            return;
+        }
+
+        let results = [];
+
+        state.lists.forEach(list => {
+            const groupName = state.groups.find(g => g.id === list.groupId)?.name || 'Ungrouped';
+            
+            list.items.forEach(item => {
+                if (purchasedOnly && !item.purchased) return;
+                
+                if (item.name.toLowerCase().includes(query)) {
+                    results.push({
+                        item: item,
+                        list: list,
+                        groupName: groupName
+                    });
+                }
+            });
+        });
+
+        // Sort: Purchased first (newest to oldest), then unpurchased (newest created to oldest)
+        results.sort((a, b) => {
+            if (a.item.purchased && !b.item.purchased) return -1;
+            if (!a.item.purchased && b.item.purchased) return 1;
+            
+            const dateA = new Date(a.item.purchased ? a.item.purchasedAt : a.item.createdAt);
+            const dateB = new Date(b.item.purchased ? b.item.purchasedAt : b.item.createdAt);
+            return dateB - dateA;
+        });
+
+        if (results.length === 0) {
+            resultsContainer.innerHTML = '<div style="text-align: center; padding: 20px;">No results found.</div>';
+            return;
+        }
+
+        resultsContainer.innerHTML = results.map(r => `
+            <div class="search-result-item" onclick="navigateToItem('${r.list.id}', '${r.item.id}')">
+                <div style="font-weight: 600;">${r.item.name}</div>
+                <div class="search-result-meta">
+                    <span>${r.groupName} > ${r.list.name}</span>
+                    <span>${r.item.purchased ? '✅ ' + formatDateTime(r.item.purchasedAt) : 'Todo'}</span>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function navigateToItem(listId, itemId) {
+        closeModal();
+        switchView('lists');
+        openList(listId);
+        
+        // Wait for render to complete so DOM element exists
+        setTimeout(() => {
+            const el = document.getElementById('item-' + itemId);
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                el.classList.add('search-highlight');
+                // Remove class after animation finishes to allow re-triggering later
+                setTimeout(() => el.classList.remove('search-highlight'), 2000);
+            }
+        }, 150);
     }
 
     // Modal Functions
@@ -2154,15 +2322,22 @@
 
     function exportSelected() {
       const selectedListIds = [...document.querySelectorAll('.export-list-cb:checked')].map(cb => cb.value);
-      const selectedGroupIds = [...document.querySelectorAll('.export-group-cb:checked')].map(cb => cb.value);
+      const selectedGroupIds = new Set([...document.querySelectorAll('.export-group-cb:checked')].map(cb => cb.value));
 
       const filteredLists = state.lists.filter(l => selectedListIds.includes(l.id));
+
+      // TICKET 1A: Auto-include groups referenced by selected lists
+      filteredLists.forEach(list => {
+          if (list.groupId) {
+              selectedGroupIds.add(list.groupId);
+          }
+      });
 
       const data = {
         version: 1,
         exportedAt: new Date().toISOString(),
         lists: filteredLists,
-        groups: state.groups.filter(g => selectedGroupIds.includes(g.id)),
+        groups: state.groups.filter(g => selectedGroupIds.has(g.id)),
         // ADDED: Readable report for accounting based on selection
         accounting_report: generateAccountingReport(filteredLists)
       };
@@ -2226,9 +2401,25 @@
             });
           }
 
+          // TICKET 1B: Normalize orphan groups (lists pointing to groups that don't exist)
+          const validGroupIds = new Set(state.groups.map(g => g.id));
+          let orphanCount = 0;
+          state.lists.forEach(l => {
+              if (l.groupId && !validGroupIds.has(l.groupId)) {
+                  l.groupId = null;
+                  orphanCount++;
+              }
+          });
+
           saveState();
           render();
-          alert('Data imported successfully!');
+          
+          let msg = 'Data imported successfully!';
+          if (orphanCount > 0) {
+              msg += ` ${orphanCount} lists were moved to 'Ungrouped' because their group was missing.`;
+          }
+          alert(msg);
+
         } catch (err) {
           alert('Error importing file: ' + err.message);
         }
