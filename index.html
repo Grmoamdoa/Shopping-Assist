@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Shopping Tracker</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- ADDED: SheetJS for Excel Export -->
+  <!-- SheetJS for Excel Export -->
   <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
   <style>
     :root {
@@ -596,7 +596,7 @@
       left: 0;
       top: 100%;
       background: var(--card);
-      min-width: 180px;
+      min-width: 200px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
       border-radius: 8px;
       z-index: 100;
@@ -712,7 +712,9 @@
             </button>
             <div id="export-dropdown" class="dropdown-content">
               <div class="dropdown-item" onclick="exportAll()">Export All Data (JSON)</div>
-              <div class="dropdown-item" onclick="showExportModal()">Export Selected / Excel...</div>
+              <!-- Moved Export All Excel here -->
+              <div class="dropdown-item" onclick="exportAllToExcel()">Export All Data (Excel)</div>
+              <div class="dropdown-item" onclick="showExportModal()">Export Selected...</div>
             </div>
           </div>
           <button class="btn btn-secondary" onclick="document.getElementById('import-file').click()">
@@ -2373,7 +2375,7 @@
           <hr style="border: 0; border-top: 1px solid var(--border); margin: 4px 0;">
           <div style="display: flex; gap: 8px; justify-content: flex-end;">
              <button type="button" class="btn btn-success" onclick="exportSelectedToExcel()">Export Selected to Excel</button>
-             <button type="button" class="btn btn-success" onclick="exportAllToExcel()">Export All to Excel</button>
+             <!-- Removed Export All to Excel from modal since it is now in the main menu -->
           </div>
         </div>
       `);
