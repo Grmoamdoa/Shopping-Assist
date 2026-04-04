@@ -1291,22 +1291,88 @@
       return DEFAULT_GROUP_COLOR;
     }
 
-    function hexToRgba(hex, alpha) {
+    function hexToRgb(hex) {
       let cleaned = normalizeHexColor(hex).replace('#', '');
       if (cleaned.length === 3) {
         cleaned = cleaned.split('').map((c) => c + c).join('');
       }
-      const r = parseInt(cleaned.slice(0, 2), 16);
-      const g = parseInt(cleaned.slice(2, 4), 16);
-      const b = parseInt(cleaned.slice(4, 6), 16);
-      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      return {
+        r: parseInt(cleaned.slice(0, 2), 16),
+        g: parseInt(cleaned.slice(2, 4), 16),
+        b: parseInt(cleaned.slice(4, 6), 16)
+      };
+    }
+
+    function rgbToCss(rgb, alpha = 1) {
+      const { r, g, b } = rgb;
+      return alpha >= 1 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    function mixRgb(colorA, colorB, amount) {
+      const clampAmount = Math.min(Math.max(amount, 0), 1);
+      return {
+        r: Math.round(colorA.r + (colorB.r - colorA.r) * clampAmount),
+        g: Math.round(colorA.g + (colorB.g - colorA.g) * clampAmount),
+        b: Math.round(colorA.b + (colorB.b - colorA.b) * clampAmount)
+      };
+    }
+
+    function getRelativeLuminance(rgb) {
+      const channels = [rgb.r, rgb.g, rgb.b].map((value) => {
+        const normalized = value / 255;
+        return normalized <= 0.03928
+          ? normalized / 12.92
+          : ((normalized + 0.055) / 1.055) ** 2.4;
+      });
+      return (0.2126 * channels[0]) + (0.7152 * channels[1]) + (0.0722 * channels[2]);
+    }
+
+    function getContrastRatio(colorA, colorB) {
+      const luminanceA = getRelativeLuminance(colorA);
+      const luminanceB = getRelativeLuminance(colorB);
+      const lighter = Math.max(luminanceA, luminanceB);
+      const darker = Math.min(luminanceA, luminanceB);
+      return (lighter + 0.05) / (darker + 0.05);
+    }
+
+    function hexToRgba(hex, alpha) {
+      return rgbToCss(hexToRgb(hex), alpha);
+    }
+
+    function getAccessibleTagPalette(color) {
+      const base = hexToRgb(color);
+      const white = { r: 255, g: 255, b: 255 };
+      const black = { r: 0, g: 0, b: 0 };
+      const fallbackText = hexToRgb('#334155');
+      const background = mixRgb(base, white, 0.86);
+      let border = mixRgb(base, white, 0.58);
+      let text = mixRgb(base, black, 0.42);
+
+      while (getContrastRatio(text, background) < 4.5) {
+        text = mixRgb(text, black, 0.12);
+        if (text.r === 0 && text.g === 0 && text.b === 0) break;
+      }
+
+      while (getContrastRatio(border, white) < 1.8) {
+        border = mixRgb(border, black, 0.08);
+        if (border.r === 0 && border.g === 0 && border.b === 0) break;
+      }
+
+      if (getContrastRatio(text, background) < 4.5) {
+        text = fallbackText;
+      }
+
+      return {
+        background: rgbToCss(background),
+        border: rgbToCss(border),
+        text: rgbToCss(text)
+      };
     }
 
     function getGroupTagStyle(group) {
       const color = normalizeHexColor(group?.color);
-      const bg = hexToRgba(color, 0.16);
-      const border = hexToRgba(color, 0.32);
-      return `style="background: ${bg}; color: ${color}; border-color: ${border};"`;
+      const palette = getAccessibleTagPalette(color);
+      return `style="background: ${palette.background}; color: ${palette.text}; border-color: ${palette.border};"`;
     }
 
     function toggleDropdown(id) {
