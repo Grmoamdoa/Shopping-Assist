@@ -457,6 +457,21 @@
       margin-bottom: 18px;
     }
 
+    .share-link-output {
+      width: 100%;
+      min-height: 92px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.8rem;
+      line-height: 1.4;
+    }
+
+    .share-link-note {
+      color: var(--text-light);
+      font-size: 0.88rem;
+      line-height: 1.45;
+    }
+
     .field-label-row {
       display: flex;
       align-items: center;
@@ -1096,6 +1111,10 @@
       <path d="M7 10l5 5 5-5"></path>
       <line x1="12" y1="4" x2="12" y2="15"></line>
     </symbol>
+    <symbol id="i-link" viewBox="0 0 24 24">
+      <path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"></path>
+      <path d="M14 11a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 20.1l1.1-1.1"></path>
+    </symbol>
     <symbol id="i-list" viewBox="0 0 24 24">
       <line x1="8" y1="6" x2="20" y2="6"></line>
       <line x1="8" y1="12" x2="20" y2="12"></line>
@@ -1168,6 +1187,7 @@
             <div id="export-dropdown" class="dropdown-content">
               <div class="dropdown-item" onclick="exportAll()">Export All Data (JSON)</div>
               <div class="dropdown-item" onclick="exportAllToExcel()">Export All Data (Excel)</div>
+              <div class="dropdown-item" onclick="copyAllShareLink()">Copy Share Link</div>
               <div class="dropdown-item" onclick="showExportModal()">Export Selected...</div>
             </div>
           </div>
@@ -1201,6 +1221,8 @@
 
     const DEFAULT_GROUP_COLOR = '#0f766e';
     const LIST_JUMP_MIN_TODO_ITEMS = 10;
+    const SHARE_LINK_HASH_PREFIX = '#import=';
+    const SHARE_LINK_MAX_LENGTH = 7000;
 
     let uiState = {
       collapsedGroups: {} // Format: { "groupId": true/false, "ungrouped": true/false }
@@ -1213,6 +1235,7 @@
       loadState();
       loadUIState();
       render();
+      handleSharedImportLink();
       document.addEventListener('click', (e) => {
         if (!e.target.closest('.dropdown')) {
           document.querySelectorAll('.dropdown-content').forEach(d => d.classList.remove('show'));
@@ -1227,6 +1250,7 @@
         const parsed = JSON.parse(saved);
         state.lists = parsed.lists || [];
         state.groups = parsed.groups || [];
+        sortListsByDate();
       }
     }
 
@@ -1281,12 +1305,35 @@
       return date.toISOString().slice(0, 10);
     }
 
+    function getListSortTime(list) {
+      const date = new Date(list?.createdAt || list?.updatedAt || 0);
+      return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+    }
+
+    function sortListsByDate() {
+      state.lists.sort((a, b) => {
+        const dateDiff = getListSortTime(b) - getListSortTime(a);
+        if (dateDiff !== 0) return dateDiff;
+        return String(a.name || '').localeCompare(String(b.name || ''));
+      });
+    }
+
     function formatCurrency(amount) {
       return '$' + (amount || 0).toFixed(2);
     }
 
     function icon(name, cls = '') {
       return `<svg class="icon ${cls}"><use href="#i-${name}"></use></svg>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      }[char]));
     }
 
     function normalizeHexColor(color) {
@@ -2532,6 +2579,7 @@
         updatedAt: new Date().toISOString()
       };
       state.lists.push(list);
+      sortListsByDate();
       saveState();
       closeModal();
       render();
@@ -3042,6 +3090,264 @@
       URL.revokeObjectURL(url);
     }
 
+    function buildExportPayload(lists, groups) {
+      return {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        lists,
+        groups,
+        accounting_report: generateAccountingReport(lists)
+      };
+    }
+
+    function bytesToBase64Url(bytes) {
+      let binary = '';
+      bytes.forEach(byte => {
+        binary += String.fromCharCode(byte);
+      });
+      return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    function base64UrlToBytes(value) {
+      const base64 = value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=');
+      const binary = atob(base64);
+      return Uint8Array.from(binary, char => char.charCodeAt(0));
+    }
+
+    async function gzipString(value) {
+      if (!('CompressionStream' in window)) {
+        throw new Error('Share links require a browser with CompressionStream support.');
+      }
+
+      const stream = new Blob([value]).stream().pipeThrough(new CompressionStream('gzip'));
+      return new Uint8Array(await new Response(stream).arrayBuffer());
+    }
+
+    async function gunzipString(bytes) {
+      if (!('DecompressionStream' in window)) {
+        throw new Error('This browser cannot open compressed share links.');
+      }
+
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+      return await new Response(stream).text();
+    }
+
+    async function encodeSharePayload(data) {
+      const compressed = await gzipString(JSON.stringify(data));
+      return bytesToBase64Url(compressed);
+    }
+
+    async function decodeSharePayload(encoded) {
+      const json = await gunzipString(base64UrlToBytes(encoded));
+      return JSON.parse(json);
+    }
+
+    function buildShareUrl(encodedPayload) {
+      return `${location.origin}${location.pathname}${SHARE_LINK_HASH_PREFIX}${encodedPayload}`;
+    }
+
+    function countItems(lists) {
+      return lists.reduce((total, list) => total + (list.items?.length || 0), 0);
+    }
+
+    function validateImportPayload(data) {
+      if (!data || (!Array.isArray(data.lists) && !Array.isArray(data.groups))) {
+        throw new Error('Invalid import format');
+      }
+    }
+
+    function mergeImportData(data) {
+      validateImportPayload(data);
+
+      if (data.groups) {
+        data.groups.forEach(importedGroup => {
+          const existing = state.groups.find(g => g.id === importedGroup.id);
+          if (existing) {
+            Object.assign(existing, importedGroup);
+          } else {
+            state.groups.push(importedGroup);
+          }
+        });
+      }
+
+      if (data.lists) {
+        data.lists.forEach(importedList => {
+          const existing = state.lists.find(l => l.id === importedList.id);
+          if (existing) {
+            if (new Date(importedList.updatedAt) > new Date(existing.updatedAt)) {
+              Object.assign(existing, importedList);
+            }
+          } else {
+            state.lists.push(importedList);
+          }
+        });
+      }
+
+      const validGroupIds = new Set(state.groups.map(g => g.id));
+      let orphanCount = 0;
+      state.lists.forEach(l => {
+        if (l.groupId && !validGroupIds.has(l.groupId)) {
+          l.groupId = null;
+          orphanCount++;
+        }
+      });
+
+      sortListsByDate();
+      saveState();
+      render();
+
+      return orphanCount;
+    }
+
+    function getImportSuccessMessage(orphanCount) {
+      let msg = 'Data imported successfully!';
+      if (orphanCount > 0) {
+        msg += ` ${orphanCount} lists were moved to 'Ungrouped' because their group was missing.`;
+      }
+      return msg;
+    }
+
+    async function copyTextToClipboard(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const copied = document.execCommand('copy');
+      textarea.remove();
+      return copied;
+    }
+
+    async function createShareLink(data) {
+      const encoded = await encodeSharePayload(data);
+      const url = buildShareUrl(encoded);
+      if (url.length > SHARE_LINK_MAX_LENGTH) {
+        throw new Error(`This share link would be ${url.length.toLocaleString()} characters, which is too large to share reliably. Try exporting fewer lists, removing item images, or using JSON export instead.`);
+      }
+      return url;
+    }
+
+    function showShareLinkModal(url, copied) {
+      showModal(`
+        <div class="modal-header">
+          <h3 class="modal-title">Share Link Ready</h3>
+          <button class="close-btn" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="share-link-output">Link</label>
+          <textarea id="share-link-output" class="form-input share-link-output" readonly>${escapeHtml(url)}</textarea>
+        </div>
+        <p class="share-link-note">
+          ${copied ? 'The link was copied to your clipboard.' : 'Copy this link and send it to another user.'}
+          Opening it will ask before importing anything.
+        </p>
+        <div class="form-actions">
+          <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+          <button class="btn btn-primary" onclick="copyTextToClipboard(document.getElementById('share-link-output').value)">Copy</button>
+        </div>
+      `);
+    }
+
+    async function copyShareLinkForData(data) {
+      try {
+        const url = await createShareLink(data);
+        let copied = false;
+        try {
+          copied = await copyTextToClipboard(url);
+        } catch (err) {
+          copied = false;
+        }
+        closeModal();
+        showShareLinkModal(url, copied);
+      } catch (err) {
+        alert('Could not create share link: ' + err.message);
+      }
+    }
+
+    async function handleSharedImportLink() {
+      if (!location.hash.startsWith(SHARE_LINK_HASH_PREFIX)) return;
+
+      const encoded = location.hash.slice(SHARE_LINK_HASH_PREFIX.length);
+      if (!encoded) return;
+
+      try {
+        const data = await decodeSharePayload(encoded);
+        validateImportPayload(data);
+        showSharedImportModal(data);
+      } catch (err) {
+        alert('Could not open share link: ' + err.message);
+        history.replaceState(null, document.title, `${location.pathname}${location.search}`);
+      }
+    }
+
+    function showSharedImportModal(data) {
+      const lists = data.lists || [];
+      const groups = data.groups || [];
+      const exportedAt = data.exportedAt ? formatDateTime(data.exportedAt) : 'Unknown date';
+      const sampleNames = lists.slice(0, 4).map(list => escapeHtml(list.name)).join(', ');
+      const remainingCount = Math.max(lists.length - 4, 0);
+
+      window.pendingSharedImportData = data;
+
+      showModal(`
+        <div class="modal-header">
+          <h3 class="modal-title">Import Shared Data?</h3>
+          <button class="close-btn" onclick="cancelSharedImport()">&times;</button>
+        </div>
+        <div class="summary-grid">
+          <div class="summary-card">
+            <div class="summary-value">${lists.length}</div>
+            <div class="summary-label">Lists</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-value">${groups.length}</div>
+            <div class="summary-label">Groups</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-value">${countItems(lists)}</div>
+            <div class="summary-label">Items</div>
+          </div>
+        </div>
+        <p class="share-link-note" style="margin-bottom: 12px;">Exported ${escapeHtml(exportedAt)}. Existing lists only update when the shared copy is newer.</p>
+        ${sampleNames ? `<p class="share-link-note" style="margin-bottom: 16px;">Includes ${sampleNames}${remainingCount ? `, and ${remainingCount} more` : ''}.</p>` : ''}
+        <div class="form-actions">
+          <button class="btn btn-secondary" onclick="cancelSharedImport()">Cancel</button>
+          <button class="btn btn-primary" onclick="confirmSharedImport()">Import</button>
+        </div>
+      `);
+    }
+
+    function clearShareHash() {
+      history.replaceState(null, document.title, `${location.pathname}${location.search}`);
+    }
+
+    function cancelSharedImport() {
+      window.pendingSharedImportData = null;
+      clearShareHash();
+      closeModal();
+    }
+
+    function confirmSharedImport() {
+      try {
+        const data = window.pendingSharedImportData;
+        if (!data) throw new Error('No shared data is ready to import.');
+        const orphanCount = mergeImportData(data);
+        window.pendingSharedImportData = null;
+        clearShareHash();
+        closeModal();
+        alert(getImportSuccessMessage(orphanCount));
+      } catch (err) {
+        alert('Error importing shared data: ' + err.message);
+      }
+    }
+
     // 2. Reusable Selection Logic
     function getSelectedExportData() {
       const selectedListIds = [...document.querySelectorAll('.export-list-cb:checked')].map(cb => cb.value);
@@ -3174,14 +3480,11 @@
 
     // Export Data / UI
     function exportAll() {
-      const data = {
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        lists: state.lists,
-        groups: state.groups,
-        accounting_report: generateAccountingReport(state.lists) 
-      };
-      downloadJSON(data, 'shopping-tracker-all.json');
+      downloadJSON(buildExportPayload(state.lists, state.groups), 'shopping-tracker-all.json');
+    }
+
+    function copyAllShareLink() {
+      copyShareLinkForData(buildExportPayload(state.lists, state.groups));
     }
 
     function showExportModal() {
@@ -3219,6 +3522,9 @@
           </div>
           <hr style="border: 0; border-top: 1px solid var(--border); margin: 4px 0;">
           <div style="display: flex; gap: 8px; justify-content: flex-end;">
+             <button type="button" class="btn btn-primary" onclick="copySelectedShareLink()">${icon('link')} Copy Share Link</button>
+          </div>
+          <div style="display: flex; gap: 8px; justify-content: flex-end;">
              <button type="button" class="btn btn-success" onclick="exportSelectedToExcel()">Export Selected to Excel</button>
           </div>
         </div>
@@ -3247,16 +3553,18 @@
         return;
       }
 
-      const data = {
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        lists: selection.lists,
-        groups: selection.groups,
-        accounting_report: generateAccountingReport(selection.lists)
-      };
-
-      downloadJSON(data, 'shopping-tracker-export.json');
+      downloadJSON(buildExportPayload(selection.lists, selection.groups), 'shopping-tracker-export.json');
       closeModal();
+    }
+
+    function copySelectedShareLink() {
+      const selection = getSelectedExportData();
+      if (!selection) {
+        alert('Please select at least one list or group to share.');
+        return;
+      }
+
+      copyShareLinkForData(buildExportPayload(selection.lists, selection.groups));
     }
 
     function downloadJSON(data, filename) {
@@ -3272,52 +3580,8 @@
       reader.onload = (e) => {
         try {
           const data = JSON.parse(e.target.result);
-          
-          if (!data.lists && !data.groups) {
-            throw new Error('Invalid file format');
-          }
-
-          if (data.groups) {
-            data.groups.forEach(importedGroup => {
-              const existing = state.groups.find(g => g.id === importedGroup.id);
-              if (existing) {
-                Object.assign(existing, importedGroup);
-              } else {
-                state.groups.push(importedGroup);
-              }
-            });
-          }
-
-          if (data.lists) {
-            data.lists.forEach(importedList => {
-              const existing = state.lists.find(l => l.id === importedList.id);
-              if (existing) {
-                if (new Date(importedList.updatedAt) > new Date(existing.updatedAt)) {
-                  Object.assign(existing, importedList);
-                }
-              } else {
-                state.lists.push(importedList);
-              }
-            });
-          }
-
-          const validGroupIds = new Set(state.groups.map(g => g.id));
-          let orphanCount = 0;
-          state.lists.forEach(l => {
-              if (l.groupId && !validGroupIds.has(l.groupId)) {
-                  l.groupId = null;
-                  orphanCount++;
-              }
-          });
-
-          saveState();
-          render();
-          
-          let msg = 'Data imported successfully!';
-          if (orphanCount > 0) {
-              msg += ` ${orphanCount} lists were moved to 'Ungrouped' because their group was missing.`;
-          }
-          alert(msg);
+          const orphanCount = mergeImportData(data);
+          alert(getImportSuccessMessage(orphanCount));
 
         } catch (err) {
           alert('Error importing file: ' + err.message);
