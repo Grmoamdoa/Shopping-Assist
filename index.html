@@ -921,6 +921,11 @@
       border: 1px solid var(--border);
     }
 
+    .header-actions .dropdown-content {
+      left: auto;
+      right: 0;
+    }
+
     .dropdown-content.show {
       display: block;
     }
@@ -1191,9 +1196,15 @@
               <div class="dropdown-item" onclick="showExportModal()">Export Selected...</div>
             </div>
           </div>
-          <button class="btn btn-secondary" onclick="document.getElementById('import-file').click()">
-            <svg class="icon"><use href="#i-download"></use></svg> Import
-          </button>
+          <div class="dropdown">
+            <button class="btn btn-secondary" onclick="toggleDropdown('import-dropdown')">
+              <svg class="icon"><use href="#i-download"></use></svg> Import
+            </button>
+            <div id="import-dropdown" class="dropdown-content">
+              <div class="dropdown-item" onclick="downloadSampleJSON()">Sample JSON</div>
+              <div class="dropdown-item" onclick="document.getElementById('import-file').click()">Import File</div>
+            </div>
+          </div>
           <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
         </div>
       </div>
@@ -3156,6 +3167,42 @@
       }
     }
 
+    function getNewestIsoDate(...dateValues) {
+      let newest = null;
+      dateValues.forEach(dateValue => {
+        if (!dateValue) return;
+        const parsed = new Date(dateValue);
+        if (Number.isNaN(parsed.getTime())) return;
+        if (!newest || parsed > newest) newest = parsed;
+      });
+      return newest ? newest.toISOString() : new Date().toISOString();
+    }
+
+    function mergeExistingList(existing, importedList) {
+      const localItems = Array.isArray(existing.items) ? existing.items : [];
+      const importedItems = Array.isArray(importedList.items) ? importedList.items : [];
+      const localItemIds = new Set(localItems.map(item => item.id));
+      const newItems = importedItems.filter(item => !localItemIds.has(item.id));
+      const importedIsNewer = new Date(importedList.updatedAt) > new Date(existing.updatedAt);
+
+      if (importedIsNewer) {
+        Object.assign(existing, {
+          ...importedList,
+          items: localItems
+        });
+      } else if (!Array.isArray(existing.items)) {
+        existing.items = localItems;
+      }
+
+      if (newItems.length > 0) {
+        existing.items.push(...newItems);
+      }
+
+      if (importedIsNewer || newItems.length > 0) {
+        existing.updatedAt = getNewestIsoDate(existing.updatedAt, importedList.updatedAt);
+      }
+    }
+
     function mergeImportData(data) {
       validateImportPayload(data);
 
@@ -3174,9 +3221,7 @@
         data.lists.forEach(importedList => {
           const existing = state.lists.find(l => l.id === importedList.id);
           if (existing) {
-            if (new Date(importedList.updatedAt) > new Date(existing.updatedAt)) {
-              Object.assign(existing, importedList);
-            }
+            mergeExistingList(existing, importedList);
           } else {
             state.lists.push(importedList);
           }
@@ -3570,6 +3615,78 @@
     function downloadJSON(data, filename) {
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       downloadBlob(blob, filename);
+    }
+
+    function downloadSampleJSON() {
+      const now = new Date().toISOString();
+      const groupId = 'sample-group-groceries';
+      const listId = 'sample-list-weekly-groceries';
+
+      const sampleData = {
+        version: 1,
+        exportedAt: now,
+        lists: [
+          {
+            id: listId,
+            name: 'Sample Weekly Groceries',
+            budget: 75,
+            groupId: groupId,
+            items: [
+              {
+                id: 'sample-item-apples',
+                name: 'Apples',
+                price: 4.99,
+                unitPrice: 4.99,
+                priceMode: 'total',
+                quantity: 1,
+                notes: 'Example produce item',
+                image: null,
+                purchased: false,
+                purchasedAt: null,
+                createdAt: now
+              },
+              {
+                id: 'sample-item-milk',
+                name: 'Milk',
+                price: 3.49,
+                unitPrice: 3.49,
+                priceMode: 'total',
+                quantity: 1,
+                notes: 'Use unique item ids when generating JSON externally',
+                image: null,
+                purchased: false,
+                purchasedAt: null,
+                createdAt: now
+              },
+              {
+                id: 'sample-item-yogurt',
+                name: 'Yogurt',
+                price: 6,
+                unitPrice: 2,
+                priceMode: 'unit',
+                quantity: 3,
+                notes: 'Per-unit example: unitPrice x quantity = price',
+                image: null,
+                purchased: true,
+                purchasedAt: now,
+                createdAt: now
+              }
+            ],
+            createdAt: now,
+            updatedAt: now
+          }
+        ],
+        groups: [
+          {
+            id: groupId,
+            name: 'Sample Grocery Group',
+            color: DEFAULT_GROUP_COLOR,
+            createdAt: now
+          }
+        ]
+      };
+
+      downloadJSON(sampleData, 'shopping-tracker-sample-import.json');
     }
 
     function importData(event) {
