@@ -1202,7 +1202,6 @@
             </button>
             <div id="import-dropdown" class="dropdown-content">
               <div class="dropdown-item" onclick="downloadSampleJSON()">Sample JSON</div>
-              <div class="dropdown-item" onclick="showImportSchemaGuide()">Schema Guide</div>
               <div class="dropdown-item" onclick="document.getElementById('import-file').click()">Import File</div>
             </div>
           </div>
@@ -4022,27 +4021,6 @@
       };
 
       downloadJSON(sampleData, 'shopping-tracker-sample-import.json');
-    }
-
-    function showImportSchemaGuide() {
-      showModal(`
-        <div class="modal-header">
-          <h3 class="modal-title">Import Schema Guide</h3>
-          <button class="close-btn" onclick="closeModal()">&times;</button>
-        </div>
-        <div class="share-link-note" style="display: grid; gap: 12px;">
-          <p>Import JSON should contain <strong>lists</strong> and optionally <strong>groups</strong>. The app also accepts exported files that include <strong>version</strong>, <strong>exportedAt</strong>, and <strong>accounting_report</strong>.</p>
-          <p><strong>List fields:</strong> id, name, items, createdAt, and updatedAt are expected. budget and groupId are optional.</p>
-          <p><strong>Item fields:</strong> id, name, price, quantity, purchased, createdAt, and updatedAt are expected. unitPrice, priceMode, notes, image, purchasedAt, and deletedAt are optional.</p>
-          <p><strong>Deleted items:</strong> to share a deletion, keep the item record with deletedAt and updatedAt set to the deletion time. Deleted items stay hidden from totals, analytics, search, and Excel exports, but remain in JSON/share exports so older copies do not add them back.</p>
-          <p><strong>Merge rule:</strong> matching list items use newest item timestamp. Legacy imports without item updatedAt are accepted and normalized from createdAt, purchasedAt, or the parent list timestamp.</p>
-          <p><strong>Large lists:</strong> share links are best for smaller lists. For lists with many items or photos, use JSON export instead.</p>
-        </div>
-        <div class="form-actions">
-          <button class="btn btn-secondary" onclick="downloadSampleJSON()">Download Sample JSON</button>
-          <button class="btn btn-primary" onclick="closeModal()">Done</button>
-        </div>
-      `);
     }
 
     function importData(event) {

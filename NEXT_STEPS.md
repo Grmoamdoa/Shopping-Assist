@@ -31,8 +31,8 @@ Completed:
 
 - The Import menu includes a downloadable sample JSON file for users or AI tools that want to generate compatible lists externally.
 - The sample JSON now includes item `updatedAt` fields and a deleted-item example.
-- The Import menu includes a schema guide covering list, group, item, and tombstone fields.
+- The visible import flow stays simple because list creation and editing are expected to happen in-app; the sample JSON is the AI-facing starting point for complex generated lists.
 
 Remaining future option:
 
-- If the schema grows, move the guide into a standalone document with versioned examples.
+- If AI-generated imports need more support later, expand the sample JSON examples instead of adding more visible import UI.
