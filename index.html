@@ -1202,6 +1202,7 @@
             </button>
             <div id="import-dropdown" class="dropdown-content">
               <div class="dropdown-item" onclick="downloadSampleJSON()">Sample JSON</div>
+              <div class="dropdown-item" onclick="showImportSchemaGuide()">Schema Guide</div>
               <div class="dropdown-item" onclick="document.getElementById('import-file').click()">Import File</div>
             </div>
           </div>
@@ -1261,6 +1262,8 @@
         const parsed = JSON.parse(saved);
         state.lists = parsed.lists || [];
         state.groups = parsed.groups || [];
+        normalizeStateRecords(state);
+        saveState();
         sortListsByDate();
       }
     }
@@ -1331,6 +1334,88 @@
 
     function formatCurrency(amount) {
       return '$' + (amount || 0).toFixed(2);
+    }
+
+    function nowIso() {
+      return new Date().toISOString();
+    }
+
+    function isDeletedItem(item) {
+      return !!item?.deletedAt;
+    }
+
+    function getActiveItems(list) {
+      return (list?.items || []).filter(item => !isDeletedItem(item));
+    }
+
+    function getPurchasedItems(list) {
+      return getActiveItems(list).filter(item => item.purchased);
+    }
+
+    function getTodoItems(list) {
+      return getActiveItems(list).filter(item => !item.purchased);
+    }
+
+    function getItemSyncTimestamp(item, fallbackDate) {
+      const itemTimestamp = getNewestIsoDate(
+        item?.updatedAt,
+        item?.deletedAt,
+        item?.purchasedAt,
+        item?.createdAt
+      );
+      return itemTimestamp || fallbackDate || nowIso();
+    }
+
+    function getSyncTime(value) {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+    }
+
+    function normalizeItemRecord(item, listUpdatedAt = null) {
+      const normalized = { ...item };
+      if (!normalized.id) normalized.id = generateId();
+      const fallbackDate = getNewestIsoDate(normalized.createdAt, normalized.purchasedAt, listUpdatedAt) || nowIso();
+      normalized.createdAt = normalized.createdAt || fallbackDate;
+      normalized.updatedAt = normalized.updatedAt || getItemSyncTimestamp(normalized, listUpdatedAt);
+      normalized.deletedAt = normalized.deletedAt || null;
+      normalized.quantity = parseInt(normalized.quantity) || 1;
+      normalized.price = parseFloat(normalized.price) || 0;
+      normalized.unitPrice = Number.isFinite(parseFloat(normalized.unitPrice))
+        ? parseFloat(normalized.unitPrice)
+        : (normalized.quantity ? normalized.price / normalized.quantity : 0);
+      normalized.priceMode = normalized.priceMode || 'total';
+      normalized.notes = normalized.notes || '';
+      normalized.image = normalized.image || null;
+      normalized.purchased = !!normalized.purchased;
+      normalized.purchasedAt = normalized.purchased ? (normalized.purchasedAt || normalized.updatedAt) : null;
+      return normalized;
+    }
+
+    function normalizeListRecord(list) {
+      const normalized = { ...list };
+      const fallbackDate = getNewestIsoDate(normalized.createdAt, normalized.updatedAt) || nowIso();
+      normalized.id = normalized.id || generateId();
+      normalized.name = normalized.name || 'Untitled List';
+      normalized.budget = parseFloat(normalized.budget) || 0;
+      normalized.groupId = normalized.groupId || null;
+      normalized.createdAt = normalized.createdAt || fallbackDate;
+      normalized.updatedAt = normalized.updatedAt || fallbackDate;
+      normalized.items = Array.isArray(normalized.items)
+        ? normalized.items.map(item => normalizeItemRecord(item, normalized.updatedAt))
+        : [];
+      return normalized;
+    }
+
+    function normalizeStateRecords(targetState) {
+      targetState.lists = (targetState.lists || []).map(normalizeListRecord);
+      targetState.groups = (targetState.groups || []).map(group => ({
+        ...group,
+        id: group.id || generateId(),
+        name: group.name || 'Untitled Group',
+        color: normalizeHexColor(group.color || DEFAULT_GROUP_COLOR),
+        createdAt: group.createdAt || nowIso(),
+        updatedAt: group.updatedAt || group.createdAt || nowIso()
+      }));
     }
 
     function icon(name, cls = '') {
@@ -1608,9 +1693,11 @@
     }
 
     function renderListCard(list) {
-      const totalSpent = list.items.filter(i => i.purchased).reduce((sum, i) => sum + i.price, 0);
-      const totalItems = list.items.length;
-      const purchasedItems = list.items.filter(i => i.purchased).length;
+      const activeItems = getActiveItems(list);
+      const purchasedItemsForList = getPurchasedItems(list);
+      const totalSpent = purchasedItemsForList.reduce((sum, i) => sum + i.price, 0);
+      const totalItems = activeItems.length;
+      const purchasedItems = purchasedItemsForList.length;
       const budgetPercent = list.budget ? (totalSpent / list.budget) * 100 : 0;
       const budgetClass = budgetPercent > 100 ? 'budget-over' : budgetPercent > 80 ? 'budget-warning' : 'budget-under';
       const group = state.groups.find(g => g.id === list.groupId);
@@ -1673,9 +1760,10 @@
     // List Detail View
     function renderListDetail() {
       const list = state.currentList;
-      const totalSpent = list.items.filter(i => i.purchased).reduce((sum, i) => sum + i.price, 0);
-      const todoItems = list.items.filter(i => !i.purchased);
-      const purchasedItems = list.items.filter(i => i.purchased);
+      const activeItems = getActiveItems(list);
+      const purchasedItems = getPurchasedItems(list);
+      const totalSpent = purchasedItems.reduce((sum, i) => sum + i.price, 0);
+      const todoItems = getTodoItems(list);
       const showListJumpButton = todoItems.length >= LIST_JUMP_MIN_TODO_ITEMS && purchasedItems.length > 0;
 
       return `
@@ -1705,7 +1793,7 @@
               <div class="summary-label">Total Spent</div>
             </div>
             <div class="summary-card">
-              <div class="summary-value">${purchasedItems.length}/${list.items.length}</div>
+              <div class="summary-value">${purchasedItems.length}/${activeItems.length}</div>
               <div class="summary-label">Items Purchased</div>
             </div>
             ${list.budget ? `
@@ -1732,7 +1820,7 @@
             </div>
           ` : ''}
 
-          ${list.items.length === 0 ? `
+          ${activeItems.length === 0 ? `
             <div class="empty-state">
               <div class="empty-state-icon">${icon('cart')}</div>
               <p>No items yet. Add items to your shopping list!</p>
@@ -1858,10 +1946,14 @@
       if (purchased && !item.purchased) {
         showCheckOffModal(item);
       } else {
+        const timestamp = nowIso();
         item.purchased = purchased;
         if (!purchased) {
           item.purchasedAt = null;
         }
+        item.updatedAt = timestamp;
+        item.deletedAt = item.deletedAt || null;
+        list.updatedAt = timestamp;
         saveState();
         render();
       }
@@ -1873,7 +1965,7 @@
       const validGroupIds = new Set(state.groups.map(g => g.id));
       const ungroupedLists = state.lists.filter(l => !l.groupId || !validGroupIds.has(l.groupId));
       const ungroupedSpent = ungroupedLists.reduce((sum, l) => 
-          sum + l.items.filter(i => i.purchased).reduce((s, i) => s + i.price, 0), 0);
+          sum + getPurchasedItems(l).reduce((s, i) => s + i.price, 0), 0);
 
       return `
         <div class="card">
@@ -1892,7 +1984,7 @@
               ${state.groups.map(group => {
                 const listsInGroup = state.lists.filter(l => l.groupId === group.id);
                 const totalSpent = listsInGroup.reduce((sum, l) => 
-                  sum + l.items.filter(i => i.purchased).reduce((s, i) => s + i.price, 0), 0);
+                  sum + getPurchasedItems(l).reduce((s, i) => s + i.price, 0), 0);
                 return `
                   <div class="list-card clickable-group-card" onclick="openGroupDetail('${group.id}')">
                     <div class="list-card-header">
@@ -2045,8 +2137,8 @@
       }
 
       const totalSpent = selectedLists.reduce((sum, l) => 
-        sum + l.items.filter(i => i.purchased).reduce((s, i) => s + i.price, 0), 0);
-      const totalItems = selectedLists.reduce((sum, l) => sum + l.items.filter(i => i.purchased).length, 0);
+        sum + getPurchasedItems(l).reduce((s, i) => s + i.price, 0), 0);
+      const totalItems = selectedLists.reduce((sum, l) => sum + getPurchasedItems(l).length, 0);
       const avgPerList = totalSpent / selectedLists.length;
       
       return `
@@ -2100,9 +2192,9 @@
 
       const labels = selectedLists.map(l => formatDate(l.createdAt));
       const spendingData = selectedLists.map(l => 
-         l.items.filter(i => i.purchased).reduce((s, i) => s + i.price, 0));
+         getPurchasedItems(l).reduce((s, i) => s + i.price, 0));
       const budgetData = selectedLists.map(l => l.budget || 0);
-      const itemsData = selectedLists.map(l => l.items.filter(i => i.purchased).length);
+      const itemsData = selectedLists.map(l => getPurchasedItems(l).length);
 
       const handleChartClick = (e, elements, chart) => {
           let index = -1;
@@ -2281,8 +2373,9 @@
     }
 
     function showListSummaryModal(list) {
-      const totalSpent = list.items.filter(i => i.purchased).reduce((sum, i) => sum + i.price, 0);
-      const itemsCount = list.items.filter(i => i.purchased).length;
+      const purchasedItems = getPurchasedItems(list);
+      const totalSpent = purchasedItems.reduce((sum, i) => sum + i.price, 0);
+      const itemsCount = purchasedItems.length;
       
       showModal(`
         <div class="modal-header">
@@ -2404,9 +2497,11 @@
         if (checkboxes.length === 0) return;
 
         const listIds = Array.from(checkboxes).map(cb => cb.value);
+        const timestamp = nowIso();
         state.lists.forEach(list => {
             if (listIds.includes(list.id)) {
                 list.groupId = null;
+                list.updatedAt = timestamp;
             }
         });
         saveState();
@@ -2418,9 +2513,11 @@
         if (checkboxes.length === 0) return;
 
         const listIds = Array.from(checkboxes).map(cb => cb.value);
+        const timestamp = nowIso();
         state.lists.forEach(list => {
             if (listIds.includes(list.id)) {
                 list.groupId = groupId;
+                list.updatedAt = timestamp;
             }
         });
         saveState();
@@ -2481,7 +2578,7 @@
         let results = [];
         state.lists.forEach(list => {
             const groupName = state.groups.find(g => g.id === list.groupId)?.name || 'Ungrouped';
-            list.items.forEach(item => {
+            getActiveItems(list).forEach(item => {
                 if (purchasedOnly && !item.purchased) return;
                 if (item.name.toLowerCase().includes(query)) {
                     results.push({
@@ -2580,14 +2677,15 @@
 
     function createList(e) {
       e.preventDefault();
+      const timestamp = nowIso();
       const list = {
         id: generateId(),
         name: document.getElementById('list-name').value,
         budget: parseFloat(document.getElementById('list-budget').value) || 0,
         groupId: document.getElementById('list-group').value || null,
         items: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        createdAt: timestamp,
+        updatedAt: timestamp
       };
       state.lists.push(list);
       sortListsByDate();
@@ -2633,7 +2731,7 @@
       list.name = document.getElementById('list-name').value;
       list.budget = parseFloat(document.getElementById('list-budget').value) || 0;
       list.groupId = document.getElementById('list-group').value || null;
-      list.updatedAt = new Date().toISOString();
+      list.updatedAt = nowIso();
       state.currentList = list;
       saveState();
       closeModal();
@@ -2733,6 +2831,7 @@
       const quantity = parseInt(document.getElementById('item-quantity').value) || 1;
       const inputPrice = parseFloat(document.getElementById('item-price').value) || 0;
       const priceMode = document.querySelector('input[name="price-mode"]:checked').value;
+      const timestamp = nowIso();
 
       let finalPrice = 0;
       let unitPrice = null;
@@ -2755,13 +2854,15 @@
         notes: document.getElementById('item-notes').value,
         image: imageData,
         purchased: purchased,
-        purchasedAt: purchased ? new Date().toISOString() : null,
-        createdAt: new Date().toISOString()
+        purchasedAt: purchased ? timestamp : null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        deletedAt: null
       };
 
       const list = state.lists.find(l => l.id === state.currentList.id);
       list.items.push(item);
-      list.updatedAt = new Date().toISOString();
+      list.updatedAt = timestamp;
       state.currentList = list;
       saveState();
       closeModal();
@@ -2874,7 +2975,10 @@
         }
       }
 
-      list.updatedAt = new Date().toISOString();
+      const timestamp = nowIso();
+      item.updatedAt = timestamp;
+      item.deletedAt = item.deletedAt || null;
+      list.updatedAt = timestamp;
       state.currentList = list;
       saveState();
       closeModal();
@@ -2949,7 +3053,8 @@
       item.quantity = quantity;
       item.notes = document.getElementById('item-notes').value;
       item.purchased = true;
-      item.purchasedAt = new Date().toISOString();
+      const timestamp = nowIso();
+      item.purchasedAt = timestamp;
       item.priceMode = priceMode;
 
       if (priceMode === 'unit') {
@@ -2969,7 +3074,9 @@
         });
       }
 
-      list.updatedAt = new Date().toISOString();
+      item.updatedAt = timestamp;
+      item.deletedAt = item.deletedAt || null;
+      list.updatedAt = timestamp;
       state.currentList = list;
       saveState();
       closeModal();
@@ -2979,8 +3086,13 @@
     function deleteItem(listId, itemId) {
       if (confirm('Delete this item?')) {
         const list = state.lists.find(l => l.id === listId);
-        list.items = list.items.filter(i => i.id !== itemId);
-        list.updatedAt = new Date().toISOString();
+        const item = list.items.find(i => i.id === itemId);
+        const timestamp = nowIso();
+        if (item) {
+          item.deletedAt = timestamp;
+          item.updatedAt = timestamp;
+        }
+        list.updatedAt = timestamp;
         state.currentList = list;
         saveState();
         render();
@@ -3045,11 +3157,13 @@
     function createGroup(e) {
       e.preventDefault();
       const colorInput = document.getElementById('group-color');
+      const timestamp = nowIso();
       const group = {
         id: generateId(),
         name: document.getElementById('group-name').value,
         color: normalizeHexColor(colorInput ? colorInput.value : DEFAULT_GROUP_COLOR),
-        createdAt: new Date().toISOString()
+        createdAt: timestamp,
+        updatedAt: timestamp
       };
       state.groups.push(group);
       const selectedListIds = [...document.querySelectorAll('.new-group-available-cb:checked')].map(cb => cb.value);
@@ -3057,6 +3171,7 @@
         state.lists.forEach(list => {
           if (selectedListIds.includes(list.id)) {
             list.groupId = group.id;
+            list.updatedAt = timestamp;
           }
         });
       }
@@ -3073,6 +3188,7 @@
       if (colorInput) {
         group.color = normalizeHexColor(colorInput.value);
       }
+      group.updatedAt = nowIso();
       saveState();
       closeModal();
       render();
@@ -3080,9 +3196,13 @@
 
     function deleteGroup(groupId) {
       if (confirm('Delete this group? Lists in this group will become ungrouped.')) {
+        const timestamp = nowIso();
         state.groups = state.groups.filter(g => g.id !== groupId);
         state.lists.forEach(l => {
-          if (l.groupId === groupId) l.groupId = null;
+          if (l.groupId === groupId) {
+            l.groupId = null;
+            l.updatedAt = timestamp;
+          }
         });
         saveState();
         render();
@@ -3158,13 +3278,102 @@
     }
 
     function countItems(lists) {
-      return lists.reduce((total, list) => total + (list.items?.length || 0), 0);
+      return lists.reduce((total, list) => total + getActiveItems(list).length, 0);
     }
 
     function validateImportPayload(data) {
       if (!data || (!Array.isArray(data.lists) && !Array.isArray(data.groups))) {
         throw new Error('Invalid import format');
       }
+    }
+
+    function createImportStats() {
+      return {
+        listsAdded: 0,
+        listMetadataUpdated: 0,
+        itemsAdded: 0,
+        itemsUpdated: 0,
+        itemsDeletedByTombstone: 0,
+        tombstonesRetained: 0,
+        unchangedItems: 0,
+        orphanedLists: 0,
+        attentionItems: [],
+        warnings: []
+      };
+    }
+
+    function addImportAttention(stats, message) {
+      if (stats.attentionItems.length < 8) {
+        stats.attentionItems.push(message);
+      }
+    }
+
+    function addImportWarning(stats, message) {
+      if (!stats.warnings.includes(message)) {
+        stats.warnings.push(message);
+      }
+    }
+
+    function getItemDisplayName(item) {
+      return item?.name ? `"${escapeHtml(item.name)}"` : 'An item';
+    }
+
+    function getListDisplayName(list) {
+      return list?.name ? `"${escapeHtml(list.name)}"` : 'A list';
+    }
+
+    function findFutureImportDates(importData, stats) {
+      const futureLimit = Date.now() + (24 * 60 * 60 * 1000);
+      let futureCount = 0;
+      const checkDate = (dateValue) => {
+        if (!dateValue) return;
+        const parsed = new Date(dateValue);
+        if (!Number.isNaN(parsed.getTime()) && parsed.getTime() > futureLimit) {
+          futureCount++;
+        }
+      };
+
+      importData.groups.forEach(group => {
+        checkDate(group.createdAt);
+        checkDate(group.updatedAt);
+      });
+
+      importData.lists.forEach(list => {
+        checkDate(list.createdAt);
+        checkDate(list.updatedAt);
+        list.items.forEach(item => {
+          checkDate(item.createdAt);
+          checkDate(item.updatedAt);
+          checkDate(item.purchasedAt);
+          checkDate(item.deletedAt);
+        });
+      });
+
+      if (futureCount > 0) {
+        addImportWarning(
+          stats,
+          `${futureCount} imported date${futureCount === 1 ? ' looks' : 's look'} more than a day ahead. If someone has the wrong device date or time, newer-change decisions may be surprising.`
+        );
+      }
+    }
+
+    function normalizeImportPayload(data) {
+      return {
+        ...data,
+        groups: Array.isArray(data.groups)
+          ? data.groups.map(group => ({
+              ...group,
+              id: group.id || generateId(),
+              name: group.name || 'Untitled Group',
+              color: normalizeHexColor(group.color || DEFAULT_GROUP_COLOR),
+              createdAt: group.createdAt || data.exportedAt || nowIso(),
+              updatedAt: group.updatedAt || group.createdAt || data.exportedAt || nowIso()
+            }))
+          : [],
+        lists: Array.isArray(data.lists)
+          ? data.lists.map(normalizeListRecord)
+          : []
+      };
     }
 
     function getNewestIsoDate(...dateValues) {
@@ -3175,65 +3384,123 @@
         if (Number.isNaN(parsed.getTime())) return;
         if (!newest || parsed > newest) newest = parsed;
       });
-      return newest ? newest.toISOString() : new Date().toISOString();
+      return newest ? newest.toISOString() : null;
     }
 
-    function mergeExistingList(existing, importedList) {
+    function mergeExistingList(existing, importedList, stats) {
+      const normalizedExisting = normalizeListRecord(existing);
+      Object.assign(existing, normalizedExisting);
+
+      const importedIsNewer = getSyncTime(importedList.updatedAt) > getSyncTime(existing.updatedAt);
       const localItems = Array.isArray(existing.items) ? existing.items : [];
-      const importedItems = Array.isArray(importedList.items) ? importedList.items : [];
-      const localItemIds = new Set(localItems.map(item => item.id));
-      const newItems = importedItems.filter(item => !localItemIds.has(item.id));
-      const importedIsNewer = new Date(importedList.updatedAt) > new Date(existing.updatedAt);
+      const localItemsById = new Map(localItems.map(item => [item.id, item]));
+      let changedItems = false;
 
       if (importedIsNewer) {
-        Object.assign(existing, {
-          ...importedList,
-          items: localItems
+        Object.keys(importedList).forEach(key => {
+          if (key !== 'items') {
+            existing[key] = importedList[key];
+          }
         });
-      } else if (!Array.isArray(existing.items)) {
         existing.items = localItems;
+        stats.listMetadataUpdated++;
       }
 
-      if (newItems.length > 0) {
-        existing.items.push(...newItems);
-      }
+      importedList.items.forEach(importedItem => {
+        const localItem = localItemsById.get(importedItem.id);
 
-      if (importedIsNewer || newItems.length > 0) {
+        if (!localItem) {
+          existing.items.push(importedItem);
+          localItemsById.set(importedItem.id, importedItem);
+          changedItems = true;
+          if (isDeletedItem(importedItem)) {
+            stats.tombstonesRetained++;
+          } else {
+            stats.itemsAdded++;
+          }
+          return;
+        }
+
+        const importedTime = getSyncTime(getItemSyncTimestamp(importedItem, importedList.updatedAt));
+        const localTime = getSyncTime(getItemSyncTimestamp(localItem, existing.updatedAt));
+
+        if (importedTime > localTime) {
+          const wasActive = !isDeletedItem(localItem);
+          const incomingDeleted = isDeletedItem(importedItem);
+          const localWasDeleted = isDeletedItem(localItem);
+          Object.assign(localItem, importedItem);
+          changedItems = true;
+          if (incomingDeleted && wasActive) {
+            stats.itemsDeletedByTombstone++;
+            addImportAttention(stats, `${getItemDisplayName(importedItem)} was deleted in the imported copy, so it was removed here too.`);
+          } else if (incomingDeleted) {
+            stats.tombstonesRetained++;
+          } else if (localWasDeleted) {
+            stats.itemsUpdated++;
+            addImportAttention(stats, `${getItemDisplayName(importedItem)} was brought back because the imported copy had a newer change than the deletion here.`);
+          } else {
+            stats.itemsUpdated++;
+            addImportAttention(stats, `${getItemDisplayName(importedItem)} used the imported copy because it had the newer changes.`);
+          }
+        } else {
+          if (isDeletedItem(localItem) && !isDeletedItem(importedItem)) {
+            stats.tombstonesRetained++;
+            addImportAttention(stats, `${getItemDisplayName(localItem)} stayed deleted because this copy had the newer deletion.`);
+          } else if (!isDeletedItem(localItem) && isDeletedItem(importedItem)) {
+            stats.unchangedItems++;
+            addImportAttention(stats, `${getItemDisplayName(localItem)} stayed on the list because this copy had newer item changes than the imported deletion.`);
+          } else {
+            stats.unchangedItems++;
+          }
+        }
+      });
+
+      if (changedItems || importedIsNewer) {
         existing.updatedAt = getNewestIsoDate(existing.updatedAt, importedList.updatedAt);
       }
     }
 
     function mergeImportData(data) {
       validateImportPayload(data);
+      normalizeStateRecords(state);
+      const importData = normalizeImportPayload(data);
+      const stats = createImportStats();
+      findFutureImportDates(importData, stats);
 
-      if (data.groups) {
-        data.groups.forEach(importedGroup => {
+      if (importData.groups) {
+        importData.groups.forEach(importedGroup => {
           const existing = state.groups.find(g => g.id === importedGroup.id);
           if (existing) {
-            Object.assign(existing, importedGroup);
+            if (getSyncTime(importedGroup.updatedAt) >= getSyncTime(existing.updatedAt)) {
+              Object.assign(existing, importedGroup);
+            }
           } else {
             state.groups.push(importedGroup);
           }
         });
       }
 
-      if (data.lists) {
-        data.lists.forEach(importedList => {
+      if (importData.lists) {
+        importData.lists.forEach(importedList => {
           const existing = state.lists.find(l => l.id === importedList.id);
           if (existing) {
-            mergeExistingList(existing, importedList);
+            mergeExistingList(existing, importedList, stats);
           } else {
             state.lists.push(importedList);
+            stats.listsAdded++;
+            stats.itemsAdded += getActiveItems(importedList).length;
+            stats.tombstonesRetained += importedList.items.filter(isDeletedItem).length;
           }
         });
       }
 
       const validGroupIds = new Set(state.groups.map(g => g.id));
-      let orphanCount = 0;
       state.lists.forEach(l => {
         if (l.groupId && !validGroupIds.has(l.groupId)) {
           l.groupId = null;
-          orphanCount++;
+          l.updatedAt = nowIso();
+          stats.orphanedLists++;
+          addImportAttention(stats, `${getListDisplayName(l)} was moved to Ungrouped because its group was not included.`);
         }
       });
 
@@ -3241,15 +3508,59 @@
       saveState();
       render();
 
-      return orphanCount;
+      return stats;
     }
 
-    function getImportSuccessMessage(orphanCount) {
-      let msg = 'Data imported successfully!';
-      if (orphanCount > 0) {
-        msg += ` ${orphanCount} lists were moved to 'Ungrouped' because their group was missing.`;
-      }
-      return msg;
+    function showImportSummaryModal(stats) {
+      const rows = [
+        ['Lists added', stats.listsAdded],
+        ['List details updated', stats.listMetadataUpdated],
+        ['Items added', stats.itemsAdded],
+        ['Items updated', stats.itemsUpdated],
+        ['Items removed', stats.itemsDeletedByTombstone],
+        ['Deleted items remembered', stats.tombstonesRetained],
+        ['Items already up to date', stats.unchangedItems],
+        ['Moved to Ungrouped', stats.orphanedLists]
+      ];
+      const hasAttention = stats.attentionItems.length > 0;
+      const hasWarnings = stats.warnings.length > 0;
+
+      showModal(`
+        <div class="modal-header">
+          <h3 class="modal-title">Import Complete</h3>
+          <button class="close-btn" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="summary-grid">
+          ${rows.map(([label, value]) => `
+            <div class="summary-card">
+              <div class="summary-value">${value}</div>
+              <div class="summary-label">${label}</div>
+            </div>
+          `).join('')}
+        </div>
+        <p class="share-link-note">
+          When two copies changed the same item, Shopping Tracker kept the newest item change. Deleted items are remembered so older shared copies do not add them back by accident.
+        </p>
+        ${hasWarnings ? `
+          <div class="manage-section" style="margin-top: 16px;">
+            <div class="manage-section-title">Check before continuing</div>
+            <ul style="margin: 10px 0 0 18px; color: var(--ink-soft); line-height: 1.45;">
+              ${stats.warnings.map(warning => `<li>${warning}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+        ${hasAttention ? `
+          <div class="manage-section" style="margin-top: 16px;">
+            <div class="manage-section-title">Changes to notice</div>
+            <ul style="margin: 10px 0 0 18px; color: var(--ink-soft); line-height: 1.45;">
+              ${stats.attentionItems.map(item => `<li>${item}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="closeModal()">Done</button>
+        </div>
+      `);
     }
 
     async function copyTextToClipboard(text) {
@@ -3274,7 +3585,7 @@
       const encoded = await encodeSharePayload(data);
       const url = buildShareUrl(encoded);
       if (url.length > SHARE_LINK_MAX_LENGTH) {
-        throw new Error(`This share link would be ${url.length.toLocaleString()} characters, which is too large to share reliably. Try exporting fewer lists, removing item images, or using JSON export instead.`);
+        throw new Error(`This list is too large for a reliable share link. Use Export All Data (JSON) or Export Selected (JSON) for this share instead. Lists with lots of items or item photos are better shared as JSON files.`);
       }
       return url;
     }
@@ -3312,7 +3623,7 @@
         closeModal();
         showShareLinkModal(url, copied);
       } catch (err) {
-        alert('Could not create share link: ' + err.message);
+        alert(err.message || 'Could not create share link. Please try JSON export instead.');
       }
     }
 
@@ -3360,7 +3671,7 @@
             <div class="summary-label">Items</div>
           </div>
         </div>
-        <p class="share-link-note" style="margin-bottom: 12px;">Exported ${escapeHtml(exportedAt)}. Existing lists only update when the shared copy is newer.</p>
+        <p class="share-link-note" style="margin-bottom: 12px;">Exported ${escapeHtml(exportedAt)}. Matching items are resolved by newest item timestamp, including deletions.</p>
         ${sampleNames ? `<p class="share-link-note" style="margin-bottom: 16px;">Includes ${sampleNames}${remainingCount ? `, and ${remainingCount} more` : ''}.</p>` : ''}
         <div class="form-actions">
           <button class="btn btn-secondary" onclick="cancelSharedImport()">Cancel</button>
@@ -3383,11 +3694,11 @@
       try {
         const data = window.pendingSharedImportData;
         if (!data) throw new Error('No shared data is ready to import.');
-        const orphanCount = mergeImportData(data);
+        const stats = mergeImportData(data);
         window.pendingSharedImportData = null;
         clearShareHash();
         closeModal();
-        alert(getImportSuccessMessage(orphanCount));
+        showImportSummaryModal(stats);
       } catch (err) {
         alert('Error importing shared data: ' + err.message);
       }
@@ -3427,7 +3738,7 @@
       const rows = [];
       lists.forEach(list => {
         const groupName = list.groupId && groupMap[list.groupId] ? groupMap[list.groupId] : 'Ungrouped';
-        list.items.forEach(item => {
+        getActiveItems(list).forEach(item => {
            const quantity = Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1;
            const totalPrice = Number.isFinite(item.price) ? item.price : 0;
            const unitPrice = Number.isFinite(item.unitPrice)
@@ -3440,6 +3751,7 @@
              list_created_at: formatIsoDate(list.createdAt),
              list_updated_at: formatIsoDate(list.updatedAt),
              item_name: item.name,
+             item_updated_at: formatDateTime(item.updatedAt),
              quantity: quantity,
              unit_price: unitPrice,
              total_price: totalPrice, // Stored final price
@@ -3458,7 +3770,7 @@
       groups.forEach(g => groupMap[g.id] = g.name);
 
       return lists.map(list => {
-         const purchasedItems = list.items.filter(i => i.purchased);
+         const purchasedItems = getPurchasedItems(list);
          const totalSpent = purchasedItems.reduce((sum, i) => sum + i.price, 0);
          const budget = list.budget || 0;
          
@@ -3578,7 +3890,7 @@
 
     function generateAccountingReport(lists) {
       return lists.map(list => {
-        const purchasedItems = list.items.filter(i => i.purchased);
+        const purchasedItems = getPurchasedItems(list);
         const totalSpent = purchasedItems.reduce((sum, i) => sum + i.price, 0);
         return {
           date: formatDate(list.createdAt),
@@ -3619,6 +3931,7 @@
 
     function downloadSampleJSON() {
       const now = new Date().toISOString();
+      const deletedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
       const groupId = 'sample-group-groceries';
       const listId = 'sample-list-weekly-groceries';
 
@@ -3643,7 +3956,9 @@
                 image: null,
                 purchased: false,
                 purchasedAt: null,
-                createdAt: now
+                createdAt: now,
+                updatedAt: now,
+                deletedAt: null
               },
               {
                 id: 'sample-item-milk',
@@ -3656,7 +3971,9 @@
                 image: null,
                 purchased: false,
                 purchasedAt: null,
-                createdAt: now
+                createdAt: now,
+                updatedAt: now,
+                deletedAt: null
               },
               {
                 id: 'sample-item-yogurt',
@@ -3669,7 +3986,24 @@
                 image: null,
                 purchased: true,
                 purchasedAt: now,
-                createdAt: now
+                createdAt: now,
+                updatedAt: now,
+                deletedAt: null
+              },
+              {
+                id: 'sample-item-deleted-old-bread',
+                name: 'Deleted old bread',
+                price: 0,
+                unitPrice: 0,
+                priceMode: 'total',
+                quantity: 1,
+                notes: 'Deleted item example: keep this record so older shared copies do not restore the item',
+                image: null,
+                purchased: false,
+                purchasedAt: null,
+                createdAt: deletedAt,
+                updatedAt: deletedAt,
+                deletedAt: deletedAt
               }
             ],
             createdAt: now,
@@ -3681,12 +4015,34 @@
             id: groupId,
             name: 'Sample Grocery Group',
             color: DEFAULT_GROUP_COLOR,
-            createdAt: now
+            createdAt: now,
+            updatedAt: now
           }
         ]
       };
 
       downloadJSON(sampleData, 'shopping-tracker-sample-import.json');
+    }
+
+    function showImportSchemaGuide() {
+      showModal(`
+        <div class="modal-header">
+          <h3 class="modal-title">Import Schema Guide</h3>
+          <button class="close-btn" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="share-link-note" style="display: grid; gap: 12px;">
+          <p>Import JSON should contain <strong>lists</strong> and optionally <strong>groups</strong>. The app also accepts exported files that include <strong>version</strong>, <strong>exportedAt</strong>, and <strong>accounting_report</strong>.</p>
+          <p><strong>List fields:</strong> id, name, items, createdAt, and updatedAt are expected. budget and groupId are optional.</p>
+          <p><strong>Item fields:</strong> id, name, price, quantity, purchased, createdAt, and updatedAt are expected. unitPrice, priceMode, notes, image, purchasedAt, and deletedAt are optional.</p>
+          <p><strong>Deleted items:</strong> to share a deletion, keep the item record with deletedAt and updatedAt set to the deletion time. Deleted items stay hidden from totals, analytics, search, and Excel exports, but remain in JSON/share exports so older copies do not add them back.</p>
+          <p><strong>Merge rule:</strong> matching list items use newest item timestamp. Legacy imports without item updatedAt are accepted and normalized from createdAt, purchasedAt, or the parent list timestamp.</p>
+          <p><strong>Large lists:</strong> share links are best for smaller lists. For lists with many items or photos, use JSON export instead.</p>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-secondary" onclick="downloadSampleJSON()">Download Sample JSON</button>
+          <button class="btn btn-primary" onclick="closeModal()">Done</button>
+        </div>
+      `);
     }
 
     function importData(event) {
@@ -3697,8 +4053,8 @@
       reader.onload = (e) => {
         try {
           const data = JSON.parse(e.target.result);
-          const orphanCount = mergeImportData(data);
-          alert(getImportSuccessMessage(orphanCount));
+          const stats = mergeImportData(data);
+          showImportSummaryModal(stats);
 
         } catch (err) {
           alert('Error importing file: ' + err.message);
