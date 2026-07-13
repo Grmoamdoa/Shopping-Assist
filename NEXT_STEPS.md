@@ -4,7 +4,7 @@
 
 Completed:
 
-- Generated share links are placed in the browser address bar, making them directly copyable when the app is hosted on GitHub Pages.
+- Opening a list automatically places its current share link in the browser address bar, making it directly copyable when the app is hosted on GitHub Pages; leaving the list restores the normal app URL.
 - Item-level `updatedAt` timestamps are refreshed whenever item details, purchase status, notes, image, price, or quantity change.
 - Item-level import merge rules keep the newest version when both sides edit the same item.
 - Delete tombstones with `deletedAt` keep removed items from reappearing from older shared copies.
